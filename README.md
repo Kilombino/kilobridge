@@ -87,4 +87,4 @@ Put `PORT` behind your tunnel or reverse proxy (it trusts `CF-Connecting-IP` the
 
 ## Licence
 
-MIT, see `LICENSE`.
+MIT, see `LICENSE`. The bundled `web/public/qrcode.js` (Kazuhiko Arase) is MIT and `web/public/jsqr.js` (cozmo/jsQR 1.4.0) is Apache-2.0; each keeps its own licence.
