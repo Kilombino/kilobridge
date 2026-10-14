@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kilobridge</title>
+<meta name="description" content="Pay a Lightning invoice on another chain with your coins. Non-custodial: your payment is only collected once the invoice is paid.">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="favicon.png" type="image/png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand"><img src="coin.png" alt="" class="coin"><h1>Kilo<span>bridge</span></h1></div>
+    <div class="tools">
+      <button id="themeBtn" class="chip" aria-label="Theme">☾</button>
+      <div class="lang"><button class="chip" data-lang="es">ES</button><button class="chip" data-lang="en">EN</button></div>
+    </div>
+  </header>
+  <p class="lead" data-t="lead"></p>
+
+  <section id="step1" class="card">
+    <label for="invoice" data-t="paste"></label>
+    <textarea id="invoice" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="lnbc…"></textarea>
+    <div class="row">
+      <button id="scanBtn" class="btn ghost"><svg class="icon-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span data-t="scan"></span></button>
+      <button id="pasteBtn" class="btn ghost" data-t="pasteBtn"></button>
+    </div>
+    <button id="checkBtn" class="btn primary wide" data-t="check"></button>
+    <p id="err1" class="err" hidden></p>
+  </section>
+
+  <section id="step2" class="card" hidden>
+    <dl class="sum">
+      <dt data-t="youSend"></dt><dd id="sumSat"></dd>
+      <dt data-t="youPay"></dt><dd id="sumPay" class="hi"></dd>
+      <dt data-t="price"></dt><dd id="sumRate"></dd>
+      <dt data-t="fee"></dt><dd id="sumFee"></dd>
+    </dl>
+    <p class="note" data-t="estimateNote"></p>
+    <div class="row">
+      <button id="backBtn" class="btn ghost" data-t="back"></button>
+      <button id="quoteBtn" class="btn primary" data-t="getInvoice"></button>
+    </div>
+    <p id="err2" class="err" hidden></p>
+  </section>
+
+  <section id="step3" class="card" hidden>
+    <p class="big"><span data-t="payExactly"></span> <strong id="paySat"></strong> <span data-t="ownUnit"></span></p>
+    <p class="timer"><span data-t="expiresIn"></span> <strong id="countdown">2:00</strong></p>
+    <a id="qrLink" class="qr" href="#"><img id="qr" alt="QR"></a>
+    <div class="row">
+      <button id="copyBtn" class="btn ghost" data-t="copy"></button>
+      <a id="openBtn" class="btn primary" href="#" data-t="open"></a>
+    </div>
+    <p class="status" id="status"></p>
+    <p class="note" data-t="holdNote"></p>
+  </section>
+
+  <section id="step4" class="card" hidden>
+    <p class="big" id="doneTitle"></p>
+    <p id="doneText"></p>
+    <div id="proof" hidden>
+      <p class="note" data-t="proof"></p>
+      <code id="preimage"></code>
+    </div>
+    <button id="againBtn" class="btn primary wide" data-t="again"></button>
+  </section>
+
+  <section class="how">
+    <h2 data-t="howTitle"></h2>
+    <ol>
+      <li data-t="how1"></li>
+      <li data-t="how2"></li>
+      <li data-t="how3"></li>
+    </ol>
+    <p class="note" id="limitsNote"></p>
+  </section>
+  <footer><span data-t="footer"></span> · <a href="https://github.com/paulscode/lightning-fork" rel="noreferrer">Lightning Fork</a></footer>
+</main>
+
+<div id="scanner" class="scanner" hidden>
+  <div class="scanbox">
+    <video id="video" playsinline muted></video>
+    <div class="frame"></div>
+    <p class="note" id="scanMsg" data-t="scanHint"></p>
+    <button id="scanClose" class="btn ghost wide" data-t="close"></button>
+  </div>
+</div>
+<canvas id="canvas" hidden></canvas>
+<script src="qrcode.js"></script>
+<script src="jsqr.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

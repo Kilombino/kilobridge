@@ -1,0 +1,12 @@
+[Unit]
+Description=Kilobridge SNI proxy to the SHA256 lnd (only if that lnd uses tlsencryptkey)
+After=network-online.target
+
+[Service]
+ExecStart=/opt/kilobridge/sni-proxy/sni-proxy -listen 172.17.0.1:10019 -upstream 192.0.2.10:10009 -name localhost \
+  -upstream-cert /etc/kilobridge/sha256-tls.cert -cert /etc/kilobridge/proxy-tls.cert -key /etc/kilobridge/proxy-tls.key
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

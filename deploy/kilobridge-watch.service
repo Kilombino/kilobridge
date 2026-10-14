@@ -1,0 +1,13 @@
+[Unit]
+Description=Kilobridge watcher: Telegram alerts and the limits the web enforces
+After=network-online.target docker.service
+
+[Service]
+# Runs as a user in the docker group: it reads the swap journal and `lncli bridge status`.
+ExecStart=/usr/bin/node /opt/kilobridge/watch/watch.js
+EnvironmentFile=/etc/kilobridge/watch.env
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,5 @@
+state/
+node_modules/
+sni-proxy/sni-proxy
+*.env
+code.json
