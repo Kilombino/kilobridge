@@ -28,7 +28,6 @@
       ownUseT: 'Using a bridge:', ownUse: 'paste the invoice above. This page and its .onion are listed at the top of the README.',
       ownRunT: 'Running one:', ownRun: 'two nodes, Lightning Fork on {COIN} and an lnd on {CHAIN}. The README walks through turning the bridge on, a macaroon with its own root key locked to one IP, the participant code, an isolated install, and Tor or Cloudflare.',
       ownBtn: 'Setup guide and code (MIT) on GitHub',
-      ownNote: 'Kilobridge: the web front end, a Telegram watcher and an optional SNI proxy. 🤝',
       scanHint: 'Point the camera at the invoice QR.', close: 'Close',
       noCamera: 'This browser cannot use the camera here. Paste the invoice instead.',
       e: {
@@ -75,7 +74,6 @@
       ownUseT: 'Para usar un bridge:', ownUse: 'pega la factura arriba. Esta página y su .onion están al principio del README.',
       ownRunT: 'Para montar uno:', ownRun: 'dos nodos, Lightning Fork en {COIN} y un lnd en {CHAIN}. El README explica cómo activar el bridge, un macaroon con su propia root key limitado a una IP, el código de participante, una instalación aislada, y Tor o Cloudflare.',
       ownBtn: 'Guía de instalación y código (MIT) en GitHub',
-      ownNote: 'Kilobridge: la web, un vigilante de Telegram y un proxy SNI opcional. 🤝',
       scanHint: 'Apunta la cámara al QR de la factura.', close: 'Cerrar',
       noCamera: 'Este navegador no puede usar la cámara aquí. Pega la factura.',
       e: {
