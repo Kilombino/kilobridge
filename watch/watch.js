@@ -18,6 +18,7 @@
 //   RESERVE_SAT      SHA-256 outbound kept for other uses of that node (default: 0)
 //   DAILY_CAP_SAT    SHA-256 sats the bridge may pay out a day (default: 1000000)
 //   TIMEZONE         the day boundary                (default: UTC)
+//   WATCH_SPLICES    tell about channel resizes (splices) of this node too (default: 1; 0 = off)
 'use strict';
 const { execFile } = require('child_process');
 const fs = require('fs');
@@ -53,6 +54,15 @@ const M = {
     low: (o, r) => `🟠 The ${CHAIN} node's outbound is down to ${o} ${SHA}, under the ${r} reserve. The web stops quoting until it is back.`,
     ok: (o) => `🟢 The ${CHAIN} node's outbound is above the reserve again (${o} ${SHA}).`,
     test: '🧪 Bridge watcher test: from now on you hear about every swap here.', off: 'disabled',
+    you: 'you', peer: 'the peer',
+    spStart: (a, who, l, r, cap, fee, our) => ['🔀 Channel resize started', `Channel with ${a}, started by ${who}.`,
+      `Your balance ${l}, the peer's ${r} ${OWN}. New capacity: ${cap} ${OWN}.`, `Fee: ${fee} ${OWN} (${our} yours).`],
+    spOnChain: (a, n) => `⛓️ The resize of the channel with ${a} is on chain; it counts after ${n} confirmations.`,
+    spLocked: (a, l, r) => ['✅ Channel resized', `Channel with ${a}: your balance ${l}, the peer's ${r} ${OWN}.`],
+    spEnded: (a, how, why) => ['⚠️ Channel resize did not go through', `Channel with ${a}: ${how}${why ? ` (${why})` : ''}. The channel keeps working at its old size.`],
+    spHow: { aborted: 'called off', dead: 'one of its coins was spent elsewhere' }, spPeerSaid: 'the peer says',
+    spRejected: (a, why) => `🟠 The resize transaction of the channel with ${a} was rejected by the node: ${why}. Look at it: lncli listchannels`,
+    spUnknown: (a) => `🚨 The funding output of the channel with ${a} was spent by a transaction this node doesn't recognise. Its link is down; look at it now.`,
   },
   es: {
     settled: (o, i, f, sp, r) => ['✅ Cambio hecho en tu bridge', `Pagaste ${o} ${SHA} y te han llegado ${i} ${OWN}.`,
@@ -66,9 +76,20 @@ const M = {
     low: (o, r) => `🟠 La salida del nodo ${CHAIN} ha bajado a ${o} ${SHA}, por debajo de la reserva de ${r}. La web deja de cotizar hasta que se reponga.`,
     ok: (o) => `🟢 La salida del nodo ${CHAIN} vuelve a estar por encima de la reserva (${o} ${SHA}).`,
     test: '🧪 Prueba del vigilante del bridge: a partir de ahora te aviso aquí de cada cambio.', off: 'desactivado',
+    you: 'ti', peer: 'el otro nodo',
+    spStart: (a, who, l, r, cap, fee, our) => ['🔀 Redimensionado de canal empezado', `Canal con ${a}, empezado por ${who}.`,
+      `Tu saldo ${l}, el del otro ${r} ${OWN}. Capacidad nueva: ${cap} ${OWN}.`, `Comisión: ${fee} ${OWN} (${our} tuyos).`],
+    spOnChain: (a, n) => `⛓️ El redimensionado del canal con ${a} ya está en cadena; cuenta a las ${n} confirmaciones.`,
+    spLocked: (a, l, r) => ['✅ Canal redimensionado', `Canal con ${a}: tu saldo ${l}, el del otro ${r} ${OWN}.`],
+    spEnded: (a, how, why) => ['⚠️ El redimensionado del canal no ha salido', `Canal con ${a}: ${how}${why ? ` (${why})` : ''}. El canal sigue funcionando con su tamaño de antes.`],
+    spHow: { aborted: 'se ha cancelado', dead: 'una de sus monedas se gastó en otra transacción' }, spPeerSaid: 'el otro nodo dice',
+    spRejected: (a, why) => `🟠 El nodo ha rechazado la transacción del redimensionado del canal con ${a}: ${why}. Míralo: lncli listchannels`,
+    spUnknown: (a) => `🚨 La salida de financiación del canal con ${a} se ha gastado con una transacción que el nodo no reconoce. Su enlace está caído: míralo ya.`,
   },
 }[LANG];
 const EVERY_MS = 20_000;
+const SPLICES = env.WATCH_SPLICES !== '0';
+const SPLICE_EVERY = 3; // ticks: once a minute
 // What the web page needs to enforce the caps, without access to the node.
 const LIMITS = env.LIMITS_FILE || '/srv/bridge-limits/limits.json';
 
@@ -204,11 +225,64 @@ async function tick(st) {
   }
 }
 
+// Channel resizes (splices) of this node: started, on chain, locked, or not.
+// A channel is known by the outpoint it was opened with, which a resize keeps.
+const signed = n => (n > 0 ? '+' : '') + Number(n).toLocaleString(LANG === 'es' ? 'es-ES' : 'en-US', { useGrouping: 'always' });
+const plain = n => Number(n).toLocaleString(LANG === 'es' ? 'es-ES' : 'en-US', { useGrouping: 'always' });
+async function splices(st) {
+  const { channels } = await lncli('listchannels');
+  const first = !st.splices;
+  st.splices ||= {};
+  for (const c of channels) {
+    const key = c.original_channel_point || c.channel_point;
+    const k = st.splices[key] ||= {};
+    const who = (c.peer_alias || c.remote_pubkey.slice(0, 16)).slice(0, 40);
+    const p = c.pending_splice;
+    if (p && p.state) {
+      const id = p.txid || p.new_channel_point || p.state;
+      if (!first && !k.started) {
+        await tell(M.spStart(who, p.initiator === 'INITIATOR_LOCAL' ? M.you : M.peer, signed(p.local_delta_sat),
+          signed(p.remote_delta_sat), plain(p.new_capacity_sat), plain(p.fee_sat), plain(p.our_fee_sat)).join('\n'));
+      }
+      k.started = true;
+      if (p.txid && ['broadcast', 'confirmed'].includes(p.state) && k.onChain !== p.txid) {
+        if (!first) await tell(M.spOnChain(who, p.lock_depth || 6) + `\nTx: ${p.txid}`);
+        k.onChain = p.txid;
+      }
+      if (p.relay_status === 'rejected' && k.rejected !== id) {
+        if (!first) await tell(M.spRejected(who, p.relay_reason || '?'));
+        k.rejected = id;
+      }
+    } else {
+      k.started = false;
+    }
+    const last = c.last_splice;
+    if (last && last.time && String(last.time) !== k.lastTime) {
+      if (!first) {
+        if (last.outcome === 'locked') {
+          await tell([...M.spLocked(who, signed(last.local_delta_sat), signed(last.remote_delta_sat)), last.txid ? `Tx: ${last.txid}` : ''].filter(Boolean).join('\n'));
+        } else {
+          const why = last.reason ? (last.reason_from_peer ? `${M.spPeerSaid}: «${last.reason}»` : last.reason) : '';
+          await tell(M.spEnded(who, M.spHow[last.outcome] || last.outcome, why).join('\n'));
+        }
+      }
+      k.lastTime = String(last.time);
+    }
+    const unknown = c.splice_status === 'funding_spent_unknown';
+    if (unknown && !k.unknownTold && !first) await tell(M.spUnknown(who));
+    k.unknownTold = unknown;
+  }
+}
+
 (async () => {
   const st = load() || {};
   if (process.argv[2] === '--test') { await tell(M.test); return; }
+  let n = 0;
   for (;;) {
     try { await tick(st); save(st); } catch (e) { console.error(new Date().toISOString(), e.message); }
+    if (SPLICES && n++ % SPLICE_EVERY === 0) {
+      try { await splices(st); save(st); } catch (e) { console.error(new Date().toISOString(), 'splices:', e.message); }
+    }
     await new Promise(r => setTimeout(r, EVERY_MS));
   }
 })();
