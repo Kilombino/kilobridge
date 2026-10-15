@@ -63,6 +63,9 @@ textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px
 code { display: block; background: var(--code); border-radius: 10px; padding: 10px; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; word-break: break-all; margin-top: 6px; }
 .how ol { padding-left: 20px; margin: 0; }
 .how li { margin-bottom: 6px; }
+.own p { margin: 0 0 10px; }
+.own ul { padding-left: 20px; margin: 0 0 14px; }
+.own a.btn { text-decoration: none; text-align: center; }
 footer { color: var(--muted); font-size: .85rem; margin-top: 28px; text-align: center; }
 footer a { color: inherit; }
 .scanner { position: fixed; inset: 0; background: rgba(0, 0, 0, .82); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }

@@ -24,6 +24,8 @@ The price, the volatility stops and the recheck before paying out are the bridge
 
 ## Run your own bridge
 
+One bridge is a single point of failure; many bridges run by different people are what make crossing between the two chains decentralized. **More bridges welcome.** 🤝
+
 You need two Lightning nodes: **Lightning Fork** on the BLAKE2b chain (it runs the bridge and is paid there) and a stock **lnd** on the SHA-256 chain with outbound liquidity (it pays the invoices). The bridge only ever pays out what it has been paid for, but price risk is yours: start with low limits.
 
 ### 1. Turn the bridge on
