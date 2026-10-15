@@ -18,7 +18,7 @@ The price, the volatility stops and the recheck before paying out are the bridge
 | Directory | What it is |
 |---|---|
 | `web/` | The page and its server (Node, no dependencies). Holds only a **participant code** of the bridge: info, quote and the state of its own swaps, nothing else. Adds a daily cap, a reserve of SHA-256 outbound for other uses of that node, per-visitor and overall rate limits, and a guard against re-quoting an invoice while an earlier hold invoice's expiry timer could still cancel the new one ([lightning-fork-bridge#2](https://github.com/paulscode/lightning-fork-bridge/issues/2)). Dark and light themes, English and Spanish, camera QR scanning. |
-| `watch/` | Tells the operator on Telegram about every swap and raises alerts (a swap waiting on the operator, a lost one, outbound under the reserve, the bridge down, the daily cap). It also writes the limits file the web reads, so the web never needs access to the node. |
+| `watch/` | Tells the operator on Telegram about every swap and raises alerts (a swap waiting on the operator, a lost one, outbound under the reserve, the bridge down, the daily cap) and about the node's channel resizes (splicing: started, on chain, locked, called off). It also writes the limits file the web reads, so the web never needs access to the node. |
 | `sni-proxy/` | Only if your SHA-256 lnd runs with `tlsencryptkey=true`: such an lnd answers clients that do not name it (SNI) with a short-lived ephemeral certificate, and the bridge dials by IP. The proxy names it and pins its real certificate. |
 | `deploy/` | systemd units and example environment files. |
 
