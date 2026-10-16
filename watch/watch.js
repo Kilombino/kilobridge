@@ -213,7 +213,12 @@ async function tick(st) {
   fs.writeFileSync(LIMITS + '.tmp', JSON.stringify(limits), { mode: 0o644 });
   fs.renameSync(LIMITS + '.tmp', LIMITS);
 
-  if (node.outbound_msat !== undefined) {
+  // Only when the balances were really read: when the SHA-256 node stalls, the bridge still says
+  // "ready" but reports them as zero, with "cannot be read" in its detail (16 Oct 2026: a
+  // two-minute timeout of that node raised a false "outbound 0"). The web still stops quoting
+  // meanwhile: the limits file keeps the zero.
+  const balancesRead = !/cannot be read/i.test(node.detail || '');
+  if (healthy && balancesRead && node.outbound_msat !== undefined) {
     const outMsat = Number(node.outbound_msat);
     if (outMsat < RESERVE_MSAT && !st.lowTold) {
       await tell(M.low(sats(outMsat), sats(RESERVE_MSAT)));
