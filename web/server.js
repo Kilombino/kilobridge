@@ -24,8 +24,11 @@ const { decode } = require('./bolt11');
 const PORT = Number(process.env.PORT || 3250);         // Cloudflare's tunnel
 const TOR_PORT = Number(process.env.TOR_PORT || 3251); // the onion: headers are not trusted
 // The participant code, as `lncli bridge code` prints it (lfbridge:…) or decoded to JSON.
-const CODE = (() => {
-  const raw = fs.readFileSync(process.env.BRIDGE_CODE_FILE, 'utf8').trim();
+// The bridge limits unpaid quotes per code, so the onion (where Kilowallet asks) can have a
+// code of its own (BRIDGE_CODE_FILE_TOR): someone filling one side's limits does not close
+// the other.
+function readCode(file) {
+  const raw = fs.readFileSync(file, 'utf8').trim();
   const m = /lfbridge:([A-Za-z0-9_-]+)/.exec(raw);
   const c = JSON.parse(m ? Buffer.from(m[1], 'base64url').toString('utf8') : raw);
   // The web reaches the bridge's REST port directly (not over Tor), so the code must pin its certificate.
@@ -33,7 +36,13 @@ const CODE = (() => {
     throw new Error('need a version 1 bridge code with url, macaroon and cert (make it with --url https://127.0.0.1:<rest port> --cert <sha256>)');
   }
   return c;
-})();
+}
+const CODE = readCode(process.env.BRIDGE_CODE_FILE);
+const CODE_TOR = process.env.BRIDGE_CODE_FILE_TOR ? readCode(process.env.BRIDGE_CODE_FILE_TOR) : CODE;
+if (CODE_TOR.url !== CODE.url || CODE_TOR.cert !== CODE.cert || (CODE_TOR.node || '') !== (CODE.node || '')) {
+  throw new Error('both bridge codes must be for the same bridge (url, cert and node)');
+}
+const codeFor = who => (who === 'tor' ? CODE_TOR : CODE);
 const LIMITS = process.env.LIMITS_FILE || '/srv/bridge-limits/limits.json';
 const STATE_DIR = process.env.STATE_DIRECTORY || path.join(__dirname, 'state');
 const REQUOTES = path.join(STATE_DIR, 'requotes.json');
@@ -83,12 +92,12 @@ class PinnedAgent extends https.Agent {
 }
 const agent = new PinnedAgent({ keepAlive: true });
 
-function bridge(method, p, body) {
+function bridge(method, p, body, code = CODE) {
   return new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : null;
     const req = https.request({
       host: url.hostname, port: url.port, path: p, method, agent, timeout: 20_000,
-      headers: { 'Grpc-Metadata-macaroon': CODE.macaroon, ...(data ? { 'content-type': 'application/json' } : {}) },
+      headers: { 'Grpc-Metadata-macaroon': code.macaroon, ...(data ? { 'content-type': 'application/json' } : {}) },
     }, res => {
       let buf = '';
       res.on('data', c => { buf += c; if (buf.length > 1 << 20) req.destroy(); });
@@ -290,7 +299,7 @@ async function apiQuote(body, who) {
   const drop = () => { if (before) live.set(inv.hash, before); else live.delete(inv.hash); saveLive(); };
 
   let q;
-  try { q = await bridge('POST', '/v2/bridge/quote', { invoice: body.invoice.trim().replace(/^lightning:/i, '') }); } catch (e) {
+  try { q = await bridge('POST', '/v2/bridge/quote', { invoice: body.invoice.trim().replace(/^lightning:/i, '') }, codeFor(who)); } catch (e) {
     drop();
     return [400, { error: refusal(e) }];
   }
@@ -326,8 +335,11 @@ async function apiSwap(hash, token, who) {
   if (!/^[0-9a-f]{64}$/.test(hash)) return [400, { error: 'invalid_request' }];
   if (!allow('swap:' + who, 120, 60_000)) return [429, { error: 'limit' }];
   let s;
-  try { s = await bridge('POST', '/v2/bridge/swap', { hash: Buffer.from(hash, 'hex').toString('base64') }); } catch (e) {
-    return [404, { error: refusal(e) }];
+  // Each code sees only its own swaps: ask with this side's code first, then the other's.
+  const req = { hash: Buffer.from(hash, 'hex').toString('base64') };
+  try { s = await bridge('POST', '/v2/bridge/swap', req, codeFor(who)); } catch (e) {
+    if (CODE_TOR === CODE) return [404, { error: refusal(e) }];
+    try { s = await bridge('POST', '/v2/bridge/swap', req, who === 'tor' ? CODE : CODE_TOR); } catch { return [404, { error: refusal(e) }]; }
   }
   const t = tokens.get(hash);
   const owner = !!(t && t.until > Date.now() && typeof token === 'string' && token.length === t.token.length &&

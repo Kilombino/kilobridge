@@ -6,8 +6,11 @@ After=network-online.target
 ExecStart=/usr/bin/node /opt/kilobridge/web/server.js
 # The participant code from `lncli bridge code`, decoded to JSON (see the README).
 LoadCredential=code:/etc/kilobridge/code.json
+# Optional: a second code for the onion, so neither side can use up the other's limits.
+#LoadCredential=code-tor:/etc/kilobridge/code-tor.json
 EnvironmentFile=/etc/kilobridge/web.env
 Environment=BRIDGE_CODE_FILE=%d/code
+#Environment=BRIDGE_CODE_FILE_TOR=%d/code-tor
 StateDirectory=kilobridge
 Restart=always
 RestartSec=5
