@@ -7,8 +7,13 @@
 // the node.
 //
 // Configuration (environment):
-//   TELEGRAM_TOKEN   bot token                       (required)
+//   TELEGRAM_TOKEN   bot token                       (required; or TELEGRAM_TOKEN_FILE,
+//                    or a systemd credential named telegram-token)
 //   TELEGRAM_CHAT    chat id to tell                 (required)
+//   LND_REST         the bridge's lnd REST address, e.g. https://127.0.0.1:8080. With it,
+//   LND_MACAROON     a read-only macaroon (offchain:read is all this needs) and
+//   LND_TLS_CERT     lnd's tls.cert, the node is read over REST with only that macaroon.
+//                    Without them, lncli inside the container (with its admin macaroon).
 //   LND_CONTAINER    the bridge's lnd container      (default: lnd)
 //   LND_NETWORK      lncli --network                 (default: mainnet)
 //   JOURNAL          swap journal inside the container
@@ -25,8 +30,12 @@ const fs = require('fs');
 const path = require('path');
 
 const env = process.env;
+const https = require('https');
 const CHAT = env.TELEGRAM_CHAT;
-const TOKEN = env.TELEGRAM_TOKEN;
+const readSecret = f => { try { return fs.readFileSync(f, 'utf8').trim(); } catch { return ''; } };
+const TOKEN = env.TELEGRAM_TOKEN ||
+  (env.TELEGRAM_TOKEN_FILE ? readSecret(env.TELEGRAM_TOKEN_FILE) : '') ||
+  (env.CREDENTIALS_DIRECTORY ? readSecret(path.join(env.CREDENTIALS_DIRECTORY, 'telegram-token')) : '');
 const CONTAINER = env.LND_CONTAINER || 'lnd';
 const NETWORK = env.LND_NETWORK || 'mainnet';
 const JOURNAL = env.JOURNAL || '/root/.lnd/data/chain/bitcoin/mainnet/bridge/swaps.journal';
@@ -110,7 +119,32 @@ function sh(args) {
   return new Promise((ok, ko) => execFile('docker', args, { maxBuffer: 64 << 20, timeout: 30_000 },
     (e, out, err) => e ? ko(new Error((err || e.message).trim())) : ok(out)));
 }
-const lncli = (...a) => sh(['exec', CONTAINER, 'lncli', '--network', NETWORK, ...a]).then(JSON.parse);
+const lncliExec = (...a) => sh(['exec', CONTAINER, 'lncli', '--network', NETWORK, ...a]).then(JSON.parse);
+
+// Over REST with a read-only macaroon, when configured: the three things this reads.
+const REST = env.LND_REST ? new URL(env.LND_REST) : null;
+const restAgent = REST && new https.Agent({ ca: fs.readFileSync(env.LND_TLS_CERT), keepAlive: true });
+const restMac = REST && fs.readFileSync(env.LND_MACAROON).toString('hex');
+function rest(p) {
+  return new Promise((ok, ko) => {
+    const req = https.request({ host: REST.hostname, port: REST.port, path: p, agent: restAgent, timeout: 30_000,
+      headers: { 'Grpc-Metadata-macaroon': restMac } }, res => {
+      let buf = '';
+      res.on('data', c => { buf += c; if (buf.length > 64 << 20) req.destroy(new Error('answer too big')); });
+      res.on('end', () => {
+        let j;
+        try { j = JSON.parse(buf); } catch { return ko(new Error(`lnd ${res.statusCode}: unreadable answer`)); }
+        if (res.statusCode >= 400) return ko(new Error(j.message || `lnd ${res.statusCode}`));
+        ok(j);
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('lnd did not answer')));
+    req.on('error', ko);
+    req.end();
+  });
+}
+const PATHS = { 'bridge status': '/v2/bridge/status', 'bridge info': '/v2/bridge/info', listchannels: '/v1/channels' };
+const lncli = (...a) => REST ? rest(PATHS[a.join(' ')]) : lncliExec(...a);
 
 async function tell(text) {
   const r = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
@@ -127,6 +161,7 @@ function load() {
   try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return null; }
 }
 function save(s) {
+  fs.mkdirSync(path.dirname(STATE), { recursive: true, mode: 0o700 });
   fs.writeFileSync(STATE + '.tmp', JSON.stringify(s), { mode: 0o600 });
   fs.renameSync(STATE + '.tmp', STATE);
 }
@@ -194,8 +229,12 @@ async function tick(st) {
   st.seen ||= {};
   const today = dayOf(Date.now());
   let todayMsat = 0;
+  // Swaps the bridge has been paid for and not finished: they count against the cap and the
+  // reserve for as long as they take (the web only holds a quote until it can be paid).
+  const pending = {};
   for (const [key, r] of all) {
     if (r.state === 'settled' && dayOf(r.updated || r.created) === today) todayMsat += Number(r.outgoing_msat);
+    if (['funded', 'paying', 'paid', 'failing'].includes(r.state)) pending[r.hash] = Math.max(pending[r.hash] || 0, Number(r.outgoing_msat) || 0);
     const done = ['settled', 'failed', 'aborted', 'lost', 'expired'].includes(r.state);
     if (!done || st.seen[key]) continue;
     // A swap that was never funded only expired: nothing to say.
@@ -261,9 +300,10 @@ async function tick(st) {
   const limits = {
     updated: Date.now(), day: today, today_msat: todayMsat, daily_cap_msat: DAILY_CAP_MSAT,
     healthy: !!healthy, outbound_msat: node.outbound_msat === undefined ? null : Number(node.outbound_msat),
-    reserve_msat: RESERVE_MSAT,
+    reserve_msat: RESERVE_MSAT, pending,
   };
   fs.writeFileSync(LIMITS + '.tmp', JSON.stringify(limits), { mode: 0o644 });
+  fs.chmodSync(LIMITS + '.tmp', 0o644); // the web runs as another user
   fs.renameSync(LIMITS + '.tmp', LIMITS);
 
   // Only when the balances were really read: when the SHA-256 node stalls, the bridge still says
@@ -320,7 +360,9 @@ async function splices(st) {
         if (last.outcome === 'locked') {
           await tell([...M.spLocked(who, signed(last.local_delta_sat), signed(last.remote_delta_sat)), last.txid ? `Tx: ${last.txid}` : ''].filter(Boolean).join('\n'));
         } else {
-          const why = last.reason ? (last.reason_from_peer ? `${M.spPeerSaid}: «${last.reason}»` : last.reason) : '';
+          // The reason can come from the peer: cut, so a long one cannot break the message.
+          const reason = String(last.reason || '').slice(0, 300);
+          const why = reason ? (last.reason_from_peer ? `${M.spPeerSaid}: «${reason}»` : reason) : '';
           await tell(M.spEnded(who, M.spHow[last.outcome] || last.outcome, why).join('\n'));
         }
       }

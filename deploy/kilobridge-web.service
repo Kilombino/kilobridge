@@ -32,6 +32,10 @@ LockPersonality=yes
 RestrictNamespaces=yes
 RestrictRealtime=yes
 MemoryMax=256M
+ProtectProc=invisible
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

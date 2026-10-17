@@ -64,7 +64,15 @@ lncli bridge code --url https://127.0.0.1:<rest port> \
   --cert $(openssl x509 -in tls.cert -noout -fingerprint -sha256 | cut -d= -f2) --label "<your name>"
 ```
 
-Save the `lfbridge:…` line as `/etc/kilobridge/code.json` (mode 600); the server accepts it as printed. The code can only quote and follow its own swaps; revoke it with `lncli deletemacaroonid <root_key_id>`. Every limit of `bridgerpc.participant.*` applies to the whole page, since the page is one participant.
+Save the `lfbridge:…` line as `/etc/kilobridge/code.json` (mode 600); the server accepts it as printed. The code can only quote and follow its own swaps; revoke it with `lncli deletemacaroonid <root_key_id>`. Every limit of `bridgerpc.participant.*` applies to the whole page, since the page is one participant: two unpaid quotes (`participant.maxunpaid`, 2 by default) close it to everyone else until they lapse.
+
+The web checks lnd's certificate against the code's fingerprint before it sends anything, and checks that every hold invoice is signed by the code's `node`. Both have to be right, or the page shows nothing.
+
+For the watcher, a macaroon that can only read:
+
+```sh
+lncli bakemacaroon --root_key_id 7211 offchain:read --save_to watch-readonly.macaroon
+```
 
 ### 3. Install
 
@@ -75,7 +83,10 @@ sudo chown <watch user> /srv/bridge-limits
 sudo cp deploy/web.env.example /etc/kilobridge/web.env        # set OPERATOR and the words
 sudo cp deploy/kilobridge-web.service /etc/systemd/system/
 sudo systemctl enable --now kilobridge-web
-# the watcher runs as a user in the docker group, with watch.env from deploy/watch.env.example
+# the watcher: watch.env from deploy/watch.env.example, deploy/kilobridge-watch.service.
+# It reads the node over REST with the read-only macaroon (LND_REST, LND_MACAROON, LND_TLS_CERT)
+# and the swap journal through `docker exec`, so its user is in the docker group: root on the
+# host. Give it nothing else to do.
 ```
 
 Put `PORT` behind your tunnel or reverse proxy (it trusts `CF-Connecting-IP` there) and `TOR_PORT` behind an onion service (`HiddenServicePort 80 127.0.0.1:3251`; headers are not believed on that port). Without fresh limits from the watcher the page refuses to quote, so start the watcher first.
@@ -84,7 +95,11 @@ Put `PORT` behind your tunnel or reverse proxy (it trusts `CF-Connecting-IP` the
 
 - No custody: a hold invoice with the payer's payment hash; nothing is paid out that was not paid for.
 - The web holds one URI-scoped macaroon (three calls) and runs as a throwaway user that can only reach localhost.
-- No accounts, no logs of invoices; strict CSP, no third-party scripts, the QR libraries are served from the page.
+- The server keeps no accounts and logs no invoices. The bridge's journal does keep every quoted invoice, and a TLS proxy in front (Cloudflare) sees every request.
+- Strict CSP and no third-party scripts, as the server sends them; a proxy in front can replace those headers and add its own script (Cloudflare's managed headers and bot detection do), so check the live headers with `curl -I`. On the onion they reach the browser as sent.
+- Anyone with an invoice can follow the state of its swap; the preimage (proof of payment) goes only to whoever got the quote, with the token the quote returned.
+- People paying from the page trust the web host: the page shows the hold invoice the server gives it. A wallet that checks the hold invoice itself (Kilowallet pins the node and bounds the amount) does not have to.
+- If the bridge stalls while holding a payment, it comes back when the hold invoice's CLTV runs out (the quote's `cltv`, in blocks), not at once.
 - The daily cap and the reserve are enforced by the web. A participant code given to anyone else (for example a Lightning Fork dashboard) would not go through them.
 
 ## Licence

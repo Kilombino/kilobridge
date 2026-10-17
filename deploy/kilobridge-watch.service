@@ -3,9 +3,14 @@ Description=Kilobridge watcher: Telegram alerts and the limits the web enforces
 After=network-online.target docker.service
 
 [Service]
-# Runs as a user in the docker group: it reads the swap journal and `lncli bridge status`.
+# Runs as a user in the docker group: it reads the swap journal with `docker exec`. The node
+# itself it reads over REST with a read-only macaroon (see watch.env).
 ExecStart=/usr/bin/node /opt/kilobridge/watch/watch.js
 EnvironmentFile=/etc/kilobridge/watch.env
+# The bot token as a credential rather than in the environment.
+LoadCredential=telegram-token:/etc/kilobridge/telegram-token
+NoNewPrivileges=yes
+PrivateTmp=yes
 Restart=always
 RestartSec=30
 

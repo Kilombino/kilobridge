@@ -9,10 +9,13 @@
 // the daily cap and a reserve of SHA-256 outbound from what the watcher publishes, a
 // per-visitor rate limit, and a guard against re-quoting an invoice while an
 // earlier hold invoice's expiry timer could still cancel the new one
-// (paulscode/lightning-fork-bridge#2).
+// (paulscode/lightning-fork-bridge#2). It talks to lnd only after checking its
+// certificate against the code, offers a hold invoice only if the bridge's
+// node signed it, and hands the preimage only to whoever got the quote.
 'use strict';
 const http = require('http');
 const https = require('https');
+const tls = require('tls');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -34,6 +37,8 @@ const CODE = (() => {
 const LIMITS = process.env.LIMITS_FILE || '/srv/bridge-limits/limits.json';
 const STATE_DIR = process.env.STATE_DIRECTORY || path.join(__dirname, 'state');
 const REQUOTES = path.join(STATE_DIR, 'requotes.json');
+const LIVE = path.join(STATE_DIR, 'live.json');
+const NODE = String(CODE.node || '').toLowerCase(); // the bridge's node: hold invoices must be signed by it
 const PUBLIC = path.join(__dirname, 'public');
 
 // What the page calls things: the operator and the two sides. The defaults are neutral.
@@ -54,14 +59,29 @@ const LIMITS_MAX_AGE = 120_000;
 
 const url = new URL(CODE.url);
 const pin = CODE.cert.replace(/:/g, '').toLowerCase();
-const agent = new https.Agent({
-  keepAlive: true,
-  rejectUnauthorized: false, // lnd's certificate is self-signed: it is pinned below instead
-  checkServerIdentity: (_host, cert) => {
-    const fp = crypto.createHash('sha256').update(cert.raw).digest('hex');
-    return fp === pin ? undefined : new Error('bridge certificate does not match the code');
-  },
-});
+// lnd's certificate is self-signed, so Node's own verification always fails and, with
+// rejectUnauthorized off, a checkServerIdentity callback would never run. The pin is checked
+// here instead, once the handshake is done and before http gets the socket: nothing of the
+// request (the macaroon header) is written to a server that does not match.
+class PinnedAgent extends https.Agent {
+  createConnection(options, done) {
+    const sock = tls.connect({ host: options.host, port: options.port, servername: undefined, rejectUnauthorized: false });
+    let settled = false;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      sock.removeListener('error', finish);
+      if (err) { sock.destroy(); done(err); } else done(null, sock);
+    };
+    sock.once('secureConnect', () => {
+      const cert = sock.getPeerCertificate(false);
+      const fp = cert && cert.raw ? crypto.createHash('sha256').update(cert.raw).digest('hex') : '';
+      finish(fp === pin ? null : new Error('unavailable: bridge certificate does not match the code'));
+    });
+    sock.once('error', finish);
+  }
+}
+const agent = new PinnedAgent({ keepAlive: true });
 
 function bridge(method, p, body) {
   return new Promise((resolve, reject) => {
@@ -93,31 +113,65 @@ const refusal = e => {
 
 // --- limits that the bridge does not know about ----------------------------
 
+// Anything missing, stale or of the wrong type closes the page: a check that cannot be made
+// is not passed.
+const isMsat = v => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 function limits() {
   let l;
   try { l = JSON.parse(fs.readFileSync(LIMITS, 'utf8')); } catch { return { ok: false, why: 'unavailable' }; }
-  if (Date.now() - l.updated > LIMITS_MAX_AGE || !l.healthy) return { ok: false, why: 'unavailable' };
-  return { ok: true, ...l };
+  if (!l || typeof l !== 'object' || !isMsat(l.updated) || Date.now() - l.updated > LIMITS_MAX_AGE || l.healthy !== true) {
+    return { ok: false, why: 'unavailable' };
+  }
+  if (![l.today_msat, l.daily_cap_msat, l.outbound_msat, l.reserve_msat].every(isMsat)) return { ok: false, why: 'unavailable' };
+  const pending = l.pending && typeof l.pending === 'object' ? l.pending : {};
+  if (!Object.values(pending).every(isMsat)) return { ok: false, why: 'unavailable' };
+  return { ok: true, ...l, pending };
 }
 
 // Quotes of ours still able to be paid or in progress, so a burst of quotes
-// cannot overrun the caps between two readings of the node.
-const live = new Map(); // hash -> { out, until }
-function liveMsat() {
-  const now = Date.now();
-  let sum = 0;
-  for (const [h, q] of live) {
-    if (q.until < now) live.delete(h); else sum += q.out;
+// cannot overrun the caps between two readings of the node. Kept on disk, so a
+// restart does not forget them; the watcher adds every swap the bridge has
+// funded and not finished (pending), however long it takes.
+// A quote holds its place until it can no longer be paid; once paid, the watcher's pending
+// takes over. Each quote also has a token, kept for an hour: whoever got the quote shows it
+// to read the preimage (proof of payment) at the end.
+const live = new Map();   // hash -> { out, until }
+const tokens = new Map(); // hash -> { token, until }
+const TOKEN_MS = 3_600_000;
+try {
+  const j = JSON.parse(fs.readFileSync(LIVE, 'utf8'));
+  for (const [h, q] of Object.entries(j.live || {})) {
+    if (/^[0-9a-f]{64}$/.test(h) && isMsat(q.out) && isMsat(q.until)) live.set(h, { out: q.out, until: q.until });
   }
-  return sum;
+  for (const [h, q] of Object.entries(j.tokens || {})) {
+    if (/^[0-9a-f]{64}$/.test(h) && /^[0-9a-f]{32}$/.test(q.token) && isMsat(q.until)) tokens.set(h, { token: q.token, until: q.until });
+  }
+} catch {}
+function saveLive() {
+  const now = Date.now();
+  for (const [h, q] of live) if (q.until < now) live.delete(h);
+  for (const [h, q] of tokens) if (q.until < now) tokens.delete(h);
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(LIVE + '.tmp', JSON.stringify({ live: Object.fromEntries(live), tokens: Object.fromEntries(tokens) }), { mode: 0o600 });
+    fs.renameSync(LIVE + '.tmp', LIVE);
+  } catch (e) { console.error('saving live quotes:', e.message); }
+}
+function pendingMsat(l) {
+  const now = Date.now();
+  const sum = { ...l.pending };
+  for (const [h, q] of live) {
+    if (q.until < now) live.delete(h); else sum[h] = Math.max(sum[h] || 0, q.out);
+  }
+  return Object.values(sum).reduce((a, b) => a + b, 0);
 }
 
 function capCheck(outMsat) {
   const l = limits();
   if (!l.ok) return 'unavailable';
-  const pending = liveMsat();
+  const pending = pendingMsat(l);
   if (l.today_msat + pending + outMsat > l.daily_cap_msat) return 'daily_cap';
-  if (l.outbound_msat !== null && l.outbound_msat - pending - outMsat < l.reserve_msat) return 'no_liquidity';
+  if (l.outbound_msat - pending - outMsat < l.reserve_msat) return 'no_liquidity';
   return null;
 }
 
@@ -152,15 +206,24 @@ function requoteWait(hash) {
 
 // Behind Cloudflare the visitor is in CF-Connecting-IP. Over Tor everyone
 // shares one bucket, and a header is not believed there: anyone could send one.
+// An IPv6 visitor is their /64: one machine usually has the whole of it.
 function visitor(req) {
   if (req.socket.localPort === TOR_PORT) return 'tor';
   const cf = req.headers['cf-connecting-ip'];
-  return typeof cf === 'string' && cf.length < 64 ? cf : 'no-ip';
+  if (typeof cf !== 'string' || cf.length >= 64) return 'no-ip';
+  if (!cf.includes(':')) return cf;
+  const [head, tail = ''] = cf.toLowerCase().split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail ? tail.split(':') : [];
+  const full = cf.includes('::') ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill('0'), ...t] : h;
+  return full.slice(0, 4).map(x => x.replace(/^0+(?=.)/, '')).join(':') + '::/64';
 }
 
 const buckets = new Map();
+const MAX_BUCKETS = 50_000;
 function allow(key, max, windowMs) {
   const now = Date.now();
+  if (!buckets.has(key) && buckets.size >= MAX_BUCKETS) return false;
   const b = (buckets.get(key) || []).filter(t => t > now - windowMs);
   if (b.length >= max) { buckets.set(key, b); return false; }
   b.push(now);
@@ -214,49 +277,65 @@ async function apiQuote(body, who) {
   if (err) return [400, { error: err }];
   const wait = requoteWait(inv.hash);
   if (wait) return [409, { error: 'wait', wait_s: wait }];
-  // Over Tor everyone shares one bucket (Kilowallet asks over Tor), so it is wider there;
-  // the bridge's own per-code limits and the overall cap still bound it.
-  const perVisitor = who === 'tor' ? 20 : 6;
-  if (!allow('quote:' + who, perVisitor, 600_000) || !allow('quote:all', 40, 600_000)) return [429, { error: 'limit' }];
+  // Over Tor everyone shares one bucket (Kilowallet asks over Tor), so it is wider there and
+  // kept apart from the clearnet total: neither side can use up the other's.
+  const ok = who === 'tor' ? allow('quote:tor', 30, 600_000) : allow('quote:' + who, 6, 600_000) && allow('quote:clearnet', 40, 600_000);
+  if (!ok) return [429, { error: 'limit' }];
   const out = Number(inv.msat);
+  // Reserve before asking the bridge, so quotes arriving together all count against the caps.
   const cap = capCheck(out);
   if (cap) return [400, { error: cap }];
+  const before = live.get(inv.hash);
+  live.set(inv.hash, { out, until: Date.now() + 5 * 60_000 });
+  const drop = () => { if (before) live.set(inv.hash, before); else live.delete(inv.hash); saveLive(); };
 
   let q;
   try { q = await bridge('POST', '/v2/bridge/quote', { invoice: body.invoice.trim().replace(/^lightning:/i, '') }); } catch (e) {
+    drop();
     return [400, { error: refusal(e) }];
   }
   (requotes[inv.hash] ||= []).push(Math.floor(Date.now() / 1000));
   saveRequotes();
 
-  // Check the hold invoice the way the payer API asks a payer to.
+  // Check the hold invoice the way the payer API asks a payer to, its signer included.
   let hold;
-  try { hold = decode(q.hold_invoice); } catch { return [502, { error: 'bad_hold' }]; }
+  try { hold = decode(q.hold_invoice); } catch { drop(); return [502, { error: 'bad_hold' }]; }
   const hashHex = Buffer.from(q.hash, 'base64').toString('hex');
-  if (hold.hash !== inv.hash || hashHex !== inv.hash || !hold.blake2b ||
-      hold.msat === null || hold.msat !== BigInt(q.incoming_msat) || Number(q.outgoing_msat) !== out) {
+  if (hold.hash !== inv.hash || hashHex !== inv.hash || !hold.blake2b || hold.network !== 'bc' ||
+      hold.msat === null || hold.msat !== BigInt(q.incoming_msat) || Number(q.outgoing_msat) !== out ||
+      (NODE && hold.payee !== NODE)) {
     console.error('hold invoice did not match the quote; not offering it');
+    drop();
     return [502, { error: 'bad_hold' }];
   }
-  live.set(inv.hash, { out, until: Date.now() + 20 * 60_000 });
+  // Until the quote can no longer be paid, plus a minute for the watcher to see it funded.
+  live.set(inv.hash, { out, until: Math.max(Number(q.expires_at) * 1000, Date.now()) + 60_000 });
+  const token = crypto.randomBytes(16).toString('hex');
+  tokens.set(inv.hash, { token, until: Date.now() + TOKEN_MS });
+  saveLive();
   return [200, {
     hold_invoice: q.hold_invoice, hash: inv.hash, sat: out / 1000,
     pay_sat: Math.ceil(Number(q.incoming_msat) / 1000), rate: q.rate, spread: q.spread,
-    expires_at: Number(q.expires_at),
+    expires_at: Number(q.expires_at), node: hold.payee, cltv: hold.minCltv, token,
   }];
 }
 
-async function apiSwap(hash, who) {
+// The state of a swap is answered to anyone with the hash (Kilowallet follows its own payment
+// this way); the preimage only to whoever got the quote, with its token.
+async function apiSwap(hash, token, who) {
   if (!/^[0-9a-f]{64}$/.test(hash)) return [400, { error: 'invalid_request' }];
   if (!allow('swap:' + who, 120, 60_000)) return [429, { error: 'limit' }];
   let s;
   try { s = await bridge('POST', '/v2/bridge/swap', { hash: Buffer.from(hash, 'hex').toString('base64') }); } catch (e) {
     return [404, { error: refusal(e) }];
   }
-  if (['settled', 'failed', 'aborted', 'expired', 'lost'].includes(s.state)) live.delete(hash);
+  const t = tokens.get(hash);
+  const owner = !!(t && t.until > Date.now() && typeof token === 'string' && token.length === t.token.length &&
+    crypto.timingSafeEqual(Buffer.from(token), Buffer.from(t.token)));
+  if (['settled', 'failed', 'aborted', 'expired', 'lost'].includes(s.state) && live.delete(hash)) saveLive();
   return [200, {
     state: s.state,
-    preimage: s.preimage ? Buffer.from(s.preimage, 'base64').toString('hex') : '',
+    preimage: owner && s.preimage ? Buffer.from(s.preimage, 'base64').toString('hex') : '',
   }];
 }
 
@@ -286,7 +365,7 @@ function send(res, status, obj) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let buf = '';
-    req.on('data', c => { buf += c; if (buf.length > 4096) { req.removeAllListeners('data'); reject(new Error('too big')); } });
+    req.on('data', c => { buf += c; if (buf.length > 4096) { req.removeAllListeners('data'); req.destroy(); reject(new Error('too big')); } });
     req.on('end', () => { try { resolve(JSON.parse(buf || '{}')); } catch { reject(new Error('bad json')); } });
   });
 }
@@ -303,7 +382,7 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
       return send(res, st, obj);
     }
     if (req.method === 'GET' && u.pathname.startsWith('/api/swap/')) {
-      const [st, obj] = await apiSwap(u.pathname.slice(10), who);
+      const [st, obj] = await apiSwap(u.pathname.slice(10), u.searchParams.get('t'), who);
       return send(res, st, obj);
     }
     if (req.method === 'GET' && u.pathname === '/api/info') {

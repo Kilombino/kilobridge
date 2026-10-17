@@ -205,7 +205,7 @@
 
   async function check() {
     if (!quote) return;
-    const d = await api('/api/swap/' + quote.hash);
+    const d = await api('/api/swap/' + quote.hash + '?t=' + encodeURIComponent(quote.token || ''));
     if (d.error) return;
     switch (d.state) {
       case 'quoted': case 'offered': return;
