@@ -43,12 +43,14 @@ const PRICE = env.PRICE_UNIT || 'SHA-256 per coin';
 // USDT value of each swap, from NonKYC's last prices: the market tickers of the two coins.
 const USDT_OWN = env.USDT_TICKER_OWN || '';         // e.g. BTCB2_USDT; empty = no USDT line
 const USDT_SHA = env.USDT_TICKER_SHA || 'BTC_USDT';
+const OWN_COIN = env.OWN_COIN || 'coin';            // names for those prices
+const SHA_COIN = env.SHA_COIN || 'SHA-256 coin';
 
 const M = {
   en: {
     settled: (o, i, f, sp, r) => ['✅ Swap done on your bridge', `You paid ${o} ${SHA} and received ${i} ${OWN}.`,
       `Your fee: ~${f} ${OWN} (${sp} %).`, `Price: ${r} ${PRICE}.`],
-    usdt: (o, i, g) => `In USDT: you paid ${o} and received ${i}, ${g} for you.`,
+    usdt: (got, own, sha) => `You got ${OWN_COIN} at ${got} (market ${own}); ${SHA_COIN} was at ${sha}.`,
     failed: (o, i) => ['↩️ Swap failed, refunded', `The ${CHAIN} invoice of ${o} ${SHA} could not be paid; the payer's ${i} ${OWN} went back. You lose nothing.`],
     aborted: (o, i) => ['↩️ Swap called off before paying', `The price moved against you (${o} ${SHA}); the payer's ${i} ${OWN} went back. You lose nothing.`],
     lost: (o, i) => ['🚨 Swap LOST', `${o} ${SHA} were paid but the ${i} ${OWN} could not be collected.`, 'Look at `lncli bridge status` now.'],
@@ -73,7 +75,7 @@ const M = {
   es: {
     settled: (o, i, f, sp, r) => ['✅ Cambio hecho en tu bridge', `Pagaste ${o} ${SHA} y te han llegado ${i} ${OWN}.`,
       `Tu comisión: ~${f} ${OWN} (${sp} %).`, `Precio: ${r} ${PRICE}.`],
-    usdt: (o, i, g) => `En USDT: pagaste ${o} y te han llegado ${i}, ${g} para ti.`,
+    usdt: (got, own, sha) => `Conseguiste ${OWN_COIN} a ${got} (mercado ${own}); ${SHA_COIN} estaba a ${sha}.`,
     failed: (o, i) => ['↩️ Cambio fallido, devuelto', `No se pudo pagar la factura ${CHAIN} de ${o} ${SHA}; los ${i} ${OWN} han vuelto a quien pagó. No pierdes nada.`],
     aborted: (o, i) => ['↩️ Cambio anulado antes de pagar', `El precio se movió en tu contra (${o} ${SHA}); los ${i} ${OWN} han vuelto a quien pagó. No pierdes nada.`],
     lost: (o, i) => ['🚨 Swap PERDIDO', `Se pagaron ${o} ${SHA} pero no se pudo cobrar la otra parte (${i} ${OWN}).`, 'Mira `lncli bridge status` cuanto antes.'],
@@ -154,18 +156,16 @@ async function lastUsdt(ticker) {
   return p;
 }
 
-// "12,34 USDT" for an amount in msat of a coin priced at p USDT.
-const usdt = (msat, p, sign = false) => {
-  const v = Number(msat) / 1e11 * p;
-  return (sign && v > 0 ? '+' : '') + v.toLocaleString(LANG === 'es' ? 'es-ES' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' USDT';
-};
+const usdt = v => v.toLocaleString(LANG === 'es' ? 'es-ES' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' USDT';
 
+// The USDT prices of both coins when the swap is told, and what one coin cost the payer here:
+// the SHA-256 side paid out, valued at its price, over the coins received.
 async function usdtLine(r) {
   if (!USDT_OWN || r.state !== 'settled') return null;
   try {
     const [own, sha] = await Promise.all([lastUsdt(USDT_OWN), lastUsdt(USDT_SHA)]);
-    const out = Number(r.outgoing_msat), inc = Number(r.incoming_msat);
-    return M.usdt(usdt(out, sha), usdt(inc, own), usdt(inc * own / sha - out, sha, true));
+    const got = Number(r.outgoing_msat) * sha / Number(r.incoming_msat);
+    return M.usdt(usdt(got), usdt(own), usdt(sha));
   } catch { return null; }
 }
 
