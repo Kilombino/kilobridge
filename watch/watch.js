@@ -40,11 +40,15 @@ const CHAIN = env.SHA_CHAIN || 'SHA-256';          // the chain the bridge pays 
 const SHA = env.SHA_UNIT || 'sats SHA-256';        // its units
 const OWN = env.OWN_UNIT || 'sats';                // the units the bridge is paid in
 const PRICE = env.PRICE_UNIT || 'SHA-256 per coin';
+// USDT value of each swap, from NonKYC's last prices: the market tickers of the two coins.
+const USDT_OWN = env.USDT_TICKER_OWN || '';         // e.g. BTCB2_USDT; empty = no USDT line
+const USDT_SHA = env.USDT_TICKER_SHA || 'BTC_USDT';
 
 const M = {
   en: {
     settled: (o, i, f, sp, r) => ['✅ Swap done on your bridge', `You paid ${o} ${SHA} and received ${i} ${OWN}.`,
       `Your fee: ~${f} ${OWN} (${sp} %).`, `Price: ${r} ${PRICE}.`],
+    usdt: (o, i, g) => `In USDT: you paid ${o} and received ${i}, ${g} for you.`,
     failed: (o, i) => ['↩️ Swap failed, refunded', `The ${CHAIN} invoice of ${o} ${SHA} could not be paid; the payer's ${i} ${OWN} went back. You lose nothing.`],
     aborted: (o, i) => ['↩️ Swap called off before paying', `The price moved against you (${o} ${SHA}); the payer's ${i} ${OWN} went back. You lose nothing.`],
     lost: (o, i) => ['🚨 Swap LOST', `${o} ${SHA} were paid but the ${i} ${OWN} could not be collected.`, 'Look at `lncli bridge status` now.'],
@@ -69,6 +73,7 @@ const M = {
   es: {
     settled: (o, i, f, sp, r) => ['✅ Cambio hecho en tu bridge', `Pagaste ${o} ${SHA} y te han llegado ${i} ${OWN}.`,
       `Tu comisión: ~${f} ${OWN} (${sp} %).`, `Precio: ${r} ${PRICE}.`],
+    usdt: (o, i, g) => `En USDT: pagaste ${o} y te han llegado ${i}, ${g} para ti.`,
     failed: (o, i) => ['↩️ Cambio fallido, devuelto', `No se pudo pagar la factura ${CHAIN} de ${o} ${SHA}; los ${i} ${OWN} han vuelto a quien pagó. No pierdes nada.`],
     aborted: (o, i) => ['↩️ Cambio anulado antes de pagar', `El precio se movió en tu contra (${o} ${SHA}); los ${i} ${OWN} han vuelto a quien pagó. No pierdes nada.`],
     lost: (o, i) => ['🚨 Swap PERDIDO', `Se pagaron ${o} ${SHA} pero no se pudo cobrar la otra parte (${i} ${OWN}).`, 'Mira `lncli bridge status` cuanto antes.'],
@@ -142,6 +147,28 @@ async function swaps() {
   return last;
 }
 
+async function lastUsdt(ticker) {
+  const r = await fetch(`https://api.nonkyc.io/api/v2/ticker/${ticker}`, { signal: AbortSignal.timeout(10_000) });
+  const p = Number((await r.json()).last_price);
+  if (!(p > 0)) throw new Error(`no price for ${ticker}`);
+  return p;
+}
+
+// "12,34 USDT" for an amount in msat of a coin priced at p USDT.
+const usdt = (msat, p, sign = false) => {
+  const v = Number(msat) / 1e11 * p;
+  return (sign && v > 0 ? '+' : '') + v.toLocaleString(LANG === 'es' ? 'es-ES' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' USDT';
+};
+
+async function usdtLine(r) {
+  if (!USDT_OWN || r.state !== 'settled') return null;
+  try {
+    const [own, sha] = await Promise.all([lastUsdt(USDT_OWN), lastUsdt(USDT_SHA)]);
+    const out = Number(r.outgoing_msat), inc = Number(r.incoming_msat);
+    return M.usdt(usdt(out, sha), usdt(inc, own), usdt(inc * own / sha - out, sha, true));
+  } catch { return null; }
+}
+
 function swapText(r) {
   const out = Number(r.outgoing_msat), inc = Number(r.incoming_msat), rate = Number(r.rate);
   const fee = rate > 0 ? inc - out / rate : 0;
@@ -172,8 +199,12 @@ async function tick(st) {
     const done = ['settled', 'failed', 'aborted', 'lost', 'expired'].includes(r.state);
     if (!done || st.seen[key]) continue;
     // A swap that was never funded only expired: nothing to say.
-    const text = first ? null : swapText(r);
-    if (text) await tell(text);
+    let text = first ? null : swapText(r);
+    if (text) {
+      const u = await usdtLine(r);
+      if (u) text = text.replace(/\nHash:/, `\n${u}\nHash:`);
+      await tell(text);
+    }
     st.seen[key] = r.state;
   }
 
