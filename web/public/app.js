@@ -42,6 +42,7 @@
         self_payment: 'That invoice can’t be paid through this bridge.', route_budget: 'That invoice can’t be paid safely (its timing).',
         in_progress: 'This invoice is already being paid. Wait a moment.', already_paid: 'This invoice has already been paid through the bridge.',
         needs_operator: 'This invoice needs {OP} to look at it.', limit: 'Too many requests. Wait a minute and try again.',
+        pow_expired: 'That took too long. Try again.', pow_used: 'Try again.', pow_invalid: 'Try again.', pow_missing: 'Reload the page and try again.',
         wait: (d) => `Wait ${d.wait_s} s before asking for a new price for this invoice.`,
         no_direction: 'This bridge doesn’t pay that kind of invoice.', bad_hold: 'The bridge gave an invoice that didn’t check out, so it isn’t shown. Try again.',
         unavailable: 'The bridge is not available right now. Try again later.', network: 'Can’t reach the server. Check your connection.',
@@ -88,6 +89,7 @@
         self_payment: 'Esa factura no se puede pagar por este bridge.', route_budget: 'Esa factura no se puede pagar con seguridad (por sus plazos).',
         in_progress: 'Esta factura ya se está pagando. Espera un momento.', already_paid: 'Esta factura ya se pagó por el bridge.',
         needs_operator: 'Esta factura necesita que la revise {OP}.', limit: 'Demasiadas peticiones. Espera un minuto y vuelve a probar.',
+        pow_expired: 'Ha tardado demasiado. Prueba otra vez.', pow_used: 'Prueba otra vez.', pow_invalid: 'Prueba otra vez.', pow_missing: 'Recarga la página y prueba otra vez.',
         wait: (d) => `Espera ${d.wait_s} s antes de pedir otro precio para esta factura.`,
         no_direction: 'Este bridge no paga ese tipo de factura.', bad_hold: 'El bridge dio una factura que no cuadraba y no se muestra. Prueba otra vez.',
         unavailable: 'El bridge no está disponible ahora. Prueba más tarde.', network: 'No se puede contactar con el servidor. Revisa tu conexión.',
@@ -106,7 +108,7 @@
         .replace(/\{OWN\}/g, L.own).replace(/\{COIN\}/g, L.coin).replace(/\{PRICE\}/g, L.price)
     : typeof v === 'function' ? (...a) => fill(v(...a)) : v;
   const t = () => new Proxy(T[lang], { get: (o, k) => k === 'e' ? new Proxy(o.e, { get: (e, c) => fill(e[c]) }) : fill(o[k]) });
-  let meta = null, quote = null, timer = null, poll = null, sat = 0;
+  let meta = null, quote = null, timer = null, poll = null, sat = 0, payHash = '';
 
   const nf = () => new Intl.NumberFormat(lang === 'es' ? 'es-ES' : 'en-US', { useGrouping: 'always' });
   const fmt = (n) => nf().format(n);
@@ -149,6 +151,7 @@
     $('checkBtn').disabled = false;
     if (d.error) return showErr('err1', d);
     sat = d.sat;
+    payHash = d.hash || '';
     $('sumSat').textContent = `${fmt(d.sat)} ${L.sha}`;
     $('sumPay').textContent = `${fmt(d.estimate_sat)} ${L.own}`;
     $('sumRate').textContent = `${d.rate.toFixed(8)} ${L.price}`;
@@ -166,10 +169,65 @@
     show('step1');
   });
 
+  // --- proof of work: SHA-256("<challenge>:<payment hash>:<nonce>") with `bits` leading zero
+  // bits, found in slices so the page stays responsive (about a second).
+  const K = new Uint32Array([0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+    0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+    0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb,
+    0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f,
+    0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
+  const W = new Uint32Array(64);
+  // The first 32 bits of SHA-256 of an ASCII string (enough to count leading zeros up to 32).
+  function sha256Head(str) {
+    const n = str.length, blocks = ((n + 9 + 63) >> 6);
+    const m = new Uint32Array(blocks * 16);
+    for (let i = 0; i < n; i++) m[i >> 2] |= str.charCodeAt(i) << (24 - (i & 3) * 8);
+    m[n >> 2] |= 0x80 << (24 - (n & 3) * 8);
+    m[blocks * 16 - 1] = n * 8;
+    let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a, h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+    for (let b = 0; b < blocks; b++) {
+      for (let i = 0; i < 16; i++) W[i] = m[b * 16 + i];
+      for (let i = 16; i < 64; i++) {
+        const x = W[i - 15], y = W[i - 2];
+        const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+        const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+        W[i] = (W[i - 16] + s0 + W[i - 7] + s1) | 0;
+      }
+      let a = h0, bb = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+      for (let i = 0; i < 64; i++) {
+        const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+        const t1 = (h + S1 + ((e & f) ^ (~e & g)) + K[i] + W[i]) | 0;
+        const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+        const t2 = (S0 + ((a & bb) ^ (a & c) ^ (bb & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = bb; bb = a; a = (t1 + t2) | 0;
+      }
+      h0 = (h0 + a) | 0; h1 = (h1 + bb) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0;
+      h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+    }
+    return h0 >>> 0;
+  }
+  async function work(hash) {
+    const c = await api('/api/pow');
+    if (c.error) return c;
+    const prefix = `${c.challenge}:${hash}:`, bits = Math.min(c.bits, 32);
+    const limit = bits === 32 ? 0 : 2 ** (32 - bits);
+    for (let n = 0; ; ) {
+      const stop = n + 20000;
+      for (; n < stop; n++) {
+        const nonce = n.toString(36);
+        if (sha256Head(prefix + nonce) < limit) return { challenge: c.challenge, nonce };
+      }
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
   async function getQuote() {
     clearErr();
     $('quoteBtn').disabled = true;
-    const d = await api('/api/quote', { invoice: invoice() });
+    const pow = await work(payHash);
+    const d = pow.error ? pow : await api('/api/quote', { invoice: invoice(), pow });
     $('quoteBtn').disabled = false;
     if (d.error) { show('step2'); return showErr('err2', d); }
     quote = d;

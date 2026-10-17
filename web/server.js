@@ -244,6 +244,47 @@ setInterval(() => {
   for (const [k, b] of buckets) if (!b.some(t => t > now - 3_600_000)) buckets.delete(k);
 }, 600_000).unref();
 
+// --- proof of work ----------------------------------------------------------
+
+// A quote costs the bridge a hold invoice and a minute of reserved liquidity, and is free to
+// ask for. So each quote has to carry a little work: the client fetches a challenge (signed
+// here, so nothing is stored until it is used) and finds a nonce such that
+// SHA-256("<challenge>:<payment hash>:<nonce>") starts with POW_BITS zero bits: about a second
+// on a phone or in a browser. A challenge lives two minutes and is good for one quote.
+const POW_BITS = Number(process.env.POW_BITS || 18);
+const POW_TTL_S = 120;
+const POW_KEY = crypto.randomBytes(32); // a restart only makes outstanding challenges ask again
+const powUsed = new Map(); // challenge -> expiry (ms)
+const powMac = body => crypto.createHmac('sha256', POW_KEY).update(body).digest('hex').slice(0, 32);
+function powChallenge() {
+  const body = `1.${Math.floor(Date.now() / 1000)}.${POW_BITS}.${crypto.randomBytes(12).toString('hex')}`;
+  return { challenge: `${body}.${powMac(body)}`, bits: POW_BITS, ttl_s: POW_TTL_S };
+}
+const leadingZeroBits = buf => {
+  let n = 0;
+  for (const b of buf) { if (b === 0) { n += 8; continue; } n += Math.clz32(b) - 24; break; }
+  return n;
+};
+// 'ok', or why the work does not count.
+function powCheck(pow, hash) {
+  if (!pow || typeof pow !== 'object') return 'missing';
+  const { challenge, nonce } = pow;
+  if (typeof challenge !== 'string' || challenge.length > 200 || typeof nonce !== 'string' || !/^[0-9a-z]{1,32}$/.test(nonce)) return 'invalid';
+  const i = challenge.lastIndexOf('.');
+  const body = challenge.slice(0, i), mac = challenge.slice(i + 1);
+  if (i < 0 || mac.length !== 32 || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(powMac(body)))) return 'invalid';
+  const [v, ts, bits] = body.split('.');
+  if (v !== '1' || Number(bits) < POW_BITS) return 'invalid';
+  const now = Date.now();
+  if (now / 1000 - Number(ts) > POW_TTL_S) return 'expired';
+  for (const [c, t] of powUsed) if (t < now) powUsed.delete(c);
+  if (powUsed.has(challenge)) return 'used';
+  const digest = crypto.createHash('sha256').update(`${challenge}:${hash}:${nonce}`).digest();
+  if (leadingZeroBits(digest) < Number(bits)) return 'invalid';
+  powUsed.set(challenge, Number(ts) * 1000 + POW_TTL_S * 1000);
+  return 'ok';
+}
+
 // --- the API ----------------------------------------------------------------
 
 function checkInvoice(text) {
@@ -277,7 +318,7 @@ async function apiCheck(body, who) {
   return [200, {
     sat: out / 1000,
     estimate_sat: Math.ceil(out / d.rate * (1 + d.spread) / 1000),
-    rate: d.rate, spread: d.spread, wait_s: requoteWait(inv.hash),
+    rate: d.rate, spread: d.spread, wait_s: requoteWait(inv.hash), hash: inv.hash,
   }];
 }
 
@@ -286,9 +327,14 @@ async function apiQuote(body, who) {
   if (err) return [400, { error: err }];
   const wait = requoteWait(inv.hash);
   if (wait) return [409, { error: 'wait', wait_s: wait }];
-  // Over Tor everyone shares one bucket (Kilowallet asks over Tor), so it is wider there and
-  // kept apart from the clearnet total: neither side can use up the other's.
-  const ok = who === 'tor' ? allow('quote:tor', 30, 600_000) : allow('quote:' + who, 6, 600_000) && allow('quote:clearnet', 40, 600_000);
+  // The work comes first, so nothing below is spent on a quote without it. The page always
+  // sends it. Over Tor, wallets from before the proof of work still quote, from a small bucket
+  // of their own; with the work, Tor has a wider one, kept apart from the clearnet total.
+  const pow = powCheck(body.pow, inv.hash);
+  if (pow !== 'ok' && pow !== 'missing') return [400, { error: 'pow_' + pow }];
+  if (pow === 'missing' && who !== 'tor') return [400, { error: 'pow_missing' }];
+  const ok = who !== 'tor' ? allow('quote:' + who, 6, 600_000) && allow('quote:clearnet', 40, 600_000)
+    : pow === 'ok' ? allow('quote:tor', 30, 600_000) : allow('quote:tor-nowork', 10, 600_000);
   if (!ok) return [429, { error: 'limit' }];
   const out = Number(inv.msat);
   // Reserve before asking the bridge, so quotes arriving together all count against the caps.
@@ -396,6 +442,10 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
     if (req.method === 'GET' && u.pathname.startsWith('/api/swap/')) {
       const [st, obj] = await apiSwap(u.pathname.slice(10), u.searchParams.get('t'), who);
       return send(res, st, obj);
+    }
+    if (req.method === 'GET' && u.pathname === '/api/pow') {
+      if (!allow('pow:' + who, who === 'tor' ? 120 : 30, 60_000)) return send(res, 429, { error: 'limit' });
+      return send(res, 200, powChallenge());
     }
     if (req.method === 'GET' && u.pathname === '/api/info') {
       const d = await info().catch(() => null);

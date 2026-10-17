@@ -67,6 +67,7 @@ lncli bridge code --url https://127.0.0.1:<rest port> \
 Save the `lfbridge:…` line as `/etc/kilobridge/code.json` (mode 600); the server accepts it as printed. The code can only quote and follow its own swaps; revoke it with `lncli deletemacaroonid <root_key_id>`. Every limit of `bridgerpc.participant.*` applies to the whole page, since the page is one participant: two unpaid quotes (`participant.maxunpaid`, 2 by default) close it to everyone else until they lapse. So:
 
 - raise the per-participant limits on the bridge, for example `bridgerpc.participant.maxunpaid=10`, `participant.maxinprogress=8` and `participant.perminute=20` (each unpaid quote reserves up to `maxswapmsat` of outbound for its minute);
+- every quote carries a small proof of work (`GET /api/pow`, then SHA-256 of `<challenge>:<payment hash>:<nonce>` with `POW_BITS` leading zero bits, 18 by default; about a second in a browser). The page always sends it; over the onion, wallets that don't yet send it still quote from a small bucket of their own;
 - give the onion a code of its own (`BRIDGE_CODE_FILE_TOR`, a second `lncli bridge code` for the same bridge), so filling one side's limits does not close the other. Wallets usually come over Tor.
 
 The web checks lnd's certificate against the code's fingerprint before it sends anything, and checks that every hold invoice is signed by the code's `node`. Both have to be right, or the page shows nothing.
