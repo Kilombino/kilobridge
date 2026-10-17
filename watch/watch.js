@@ -50,6 +50,8 @@ const M = {
     lost: (o, i) => ['🚨 Swap LOST', `${o} ${SHA} were paid but the ${i} ${OWN} could not be collected.`, 'Look at `lncli bridge status` now.'],
     cap: (pct, t, c) => `${pct === 1 ? '⛔ Daily cap reached' : '⚠️ 80 % of the daily cap'}: ${t} of ${c} ${SHA} paid out today.`,
     down: (why) => `🔴 The bridge cannot serve: ${why}.`, up: '🟢 The bridge is serving again.',
+    closed: (code, why) => `⏸️ The bridge is not quoting (${code}): ${why}.${code === 'chain_unmeasured' ? ' It reopens by itself once enough blocks of the new difficulty epoch have been seen.' : ''}`,
+    open: '▶️ The bridge is quoting again.',
     ops: (n) => `🛠️ ${n} swap(s) need you: lncli bridge status`,
     low: (o, r) => `🟠 The ${CHAIN} node's outbound is down to ${o} ${SHA}, under the ${r} reserve. The web stops quoting until it is back.`,
     ok: (o) => `🟢 The ${CHAIN} node's outbound is above the reserve again (${o} ${SHA}).`,
@@ -72,6 +74,8 @@ const M = {
     lost: (o, i) => ['🚨 Swap PERDIDO', `Se pagaron ${o} ${SHA} pero no se pudo cobrar la otra parte (${i} ${OWN}).`, 'Mira `lncli bridge status` cuanto antes.'],
     cap: (pct, t, c) => `${pct === 1 ? '⛔ Tope diario alcanzado' : '⚠️ 80 % del tope diario'}: hoy van ${t} de ${c} ${SHA} pagados por el bridge.`,
     down: (why) => `🔴 El bridge no puede dar servicio: ${why}.`, up: '🟢 El bridge vuelve a dar servicio.',
+    closed: (code, why) => `⏸️ El bridge no está cotizando (${code}): ${why}.${code === 'chain_unmeasured' ? ' Vuelve solo cuando haya visto bastantes bloques de la época de dificultad nueva.' : ''}`,
+    open: '▶️ El bridge vuelve a cotizar.',
     ops: (n) => `🛠️ ${n} swap(s) necesitan que mires: lncli bridge status`,
     low: (o, r) => `🟠 La salida del nodo ${CHAIN} ha bajado a ${o} ${SHA}, por debajo de la reserva de ${r}. La web deja de cotizar hasta que se reponga.`,
     ok: (o) => `🟢 La salida del nodo ${CHAIN} vuelve a estar por encima de la reserva (${o} ${SHA}).`,
@@ -196,6 +200,24 @@ async function tick(st) {
   } else if (healthy && st.downTold) {
     await tell(M.up);
     st.downTold = false;
+  }
+
+  // Whether it quotes: the node can be ready while the bridge refuses every quote (17 Oct 2026:
+  // ~17 h closed with chain_unmeasured after a difficulty epoch began). Only while healthy, so a
+  // node that is down is told once, as down.
+  if (healthy) {
+    let dir = null;
+    try { dir = ((await lncli('bridge', 'info')).directions || []).find(d => d.name === 'toSHA256'); } catch {}
+    if (dir) {
+      st.closed = dir.open ? 0 : (st.closed || 0) + 1;
+      if (st.closed === 3 && !st.closedTold) {
+        await tell(M.closed(dir.refusal_code || '?', dir.refusal || '?'));
+        st.closedTold = true;
+      } else if (dir.open && st.closedTold) {
+        await tell(M.open);
+        st.closedTold = false;
+      }
+    }
   }
 
   const ops = (s.needs_operator || []).map(x => typeof x === 'string' ? x : (x.hash || JSON.stringify(x)));
