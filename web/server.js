@@ -1,17 +1,19 @@
 // Kilobridge web: a page where anyone pastes (or scans) a Lightning invoice of
-// the SHA-256 chain and pays it with BLAKE2b-chain coins through a Lightning
-// Fork bridge.
+// either chain and pays it with the other chain's coins through a Lightning
+// Fork bridge. The invoice says which way: one with option_blake2b (feature bit
+// 512/513) is a BLAKE2b-chain invoice, paid with SHA-256 coins (toBLAKE2b);
+// any other mainnet invoice is a SHA-256 one, paid with BLAKE2b coins (toSHA256).
 //
 // The server holds one participant code of the bridge (info, quote and the
 // state of its own swaps; nothing else) and never touches funds: the payer pays
 // a hold invoice with the same payment hash, which the bridge can only collect
-// by paying the SHA-256 invoice. On top of the bridge's own limits it enforces
-// the daily cap and a reserve of SHA-256 outbound from what the watcher publishes, a
+// by paying the invoice. On top of the bridge's own limits it enforces, per
+// direction, the daily cap and a reserve of outbound from what the watcher publishes, a
 // per-visitor rate limit, and a guard against re-quoting an invoice while an
 // earlier hold invoice's expiry timer could still cancel the new one
 // (paulscode/lightning-fork-bridge#2). It talks to lnd only after checking its
 // certificate against the code, offers a hold invoice only if the bridge's
-// node signed it, and hands the preimage only to whoever got the quote.
+// node on the payer's chain signed it, and hands the preimage only to whoever got the quote.
 'use strict';
 const http = require('http');
 const https = require('https');
@@ -50,6 +52,11 @@ const STATE_DIR = process.env.STATE_DIRECTORY || path.join(__dirname, 'state');
 const REQUOTES = path.join(STATE_DIR, 'requotes.json');
 const LIVE = path.join(STATE_DIR, 'live.json');
 const NODE = String(CODE.node || '').toLowerCase(); // the bridge's node: hold invoices must be signed by it
+// Its SHA-256 node, which issues the hold invoices of toBLAKE2b. Without it that direction is
+// not offered: a hold invoice whose signer cannot be checked is never shown.
+const SHA_NODE = String(process.env.SHA_NODE || '').toLowerCase();
+if (SHA_NODE && !/^0[23][0-9a-f]{64}$/.test(SHA_NODE)) throw new Error('SHA_NODE must be a node public key');
+const DIRS = ['toSHA256', 'toBLAKE2b'];
 const PUBLIC = path.join(__dirname, 'public');
 
 // What the page calls things: the operator and the two sides. The defaults are neutral.
@@ -128,11 +135,17 @@ const refusal = e => {
 // Anything missing, stale or of the wrong type closes the page: a check that cannot be made
 // is not passed.
 const isMsat = v => typeof v === 'number' && Number.isFinite(v) && v >= 0;
-function limits() {
+// The watcher publishes toSHA256's numbers at the top (SHA-256 msat) and toBLAKE2b's under
+// to_blake2b (BLAKE2b msat): what was paid out today, the cap, outbound, reserve, pending.
+function limits(dir = 'toSHA256') {
   let l;
   try { l = JSON.parse(fs.readFileSync(LIMITS, 'utf8')); } catch { return { ok: false, why: 'unavailable' }; }
   if (!l || typeof l !== 'object' || !isMsat(l.updated) || Date.now() - l.updated > LIMITS_MAX_AGE || l.healthy !== true) {
     return { ok: false, why: 'unavailable' };
+  }
+  if (dir === 'toBLAKE2b') {
+    if (!l.to_blake2b || typeof l.to_blake2b !== 'object') return { ok: false, why: 'unavailable' };
+    l = l.to_blake2b;
   }
   if (![l.today_msat, l.daily_cap_msat, l.outbound_msat, l.reserve_msat].every(isMsat)) return { ok: false, why: 'unavailable' };
   const pending = l.pending && typeof l.pending === 'object' ? l.pending : {};
@@ -147,13 +160,13 @@ function limits() {
 // A quote holds its place until it can no longer be paid; once paid, the watcher's pending
 // takes over. Each quote also has a token, kept for an hour: whoever got the quote shows it
 // to read the preimage (proof of payment) at the end.
-const live = new Map();   // hash -> { out, until }
+const live = new Map();   // hash -> { out, until, dir }
 const tokens = new Map(); // hash -> { token, until }
 const TOKEN_MS = 3_600_000;
 try {
   const j = JSON.parse(fs.readFileSync(LIVE, 'utf8'));
   for (const [h, q] of Object.entries(j.live || {})) {
-    if (/^[0-9a-f]{64}$/.test(h) && isMsat(q.out) && isMsat(q.until)) live.set(h, { out: q.out, until: q.until });
+    if (/^[0-9a-f]{64}$/.test(h) && isMsat(q.out) && isMsat(q.until)) live.set(h, { out: q.out, until: q.until, dir: q.dir === 'toBLAKE2b' ? q.dir : 'toSHA256' });
   }
   for (const [h, q] of Object.entries(j.tokens || {})) {
     if (/^[0-9a-f]{64}$/.test(h) && /^[0-9a-f]{32}$/.test(q.token) && isMsat(q.until)) tokens.set(h, { token: q.token, until: q.until });
@@ -169,19 +182,20 @@ function saveLive() {
     fs.renameSync(LIVE + '.tmp', LIVE);
   } catch (e) { console.error('saving live quotes:', e.message); }
 }
-function pendingMsat(l) {
+function pendingMsat(l, dir) {
   const now = Date.now();
   const sum = { ...l.pending };
   for (const [h, q] of live) {
-    if (q.until < now) live.delete(h); else sum[h] = Math.max(sum[h] || 0, q.out);
+    if (q.until < now) live.delete(h); else if (q.dir === dir) sum[h] = Math.max(sum[h] || 0, q.out);
   }
   return Object.values(sum).reduce((a, b) => a + b, 0);
 }
 
-function capCheck(outMsat) {
-  const l = limits();
+// The payout's msat are in the units of the chain it is paid on, as are that direction's limits.
+function capCheck(outMsat, dir) {
+  const l = limits(dir);
   if (!l.ok) return 'unavailable';
-  const pending = pendingMsat(l);
+  const pending = pendingMsat(l, dir);
   if (l.today_msat + pending + outMsat > l.daily_cap_msat) return 'daily_cap';
   if (l.outbound_msat - pending - outMsat < l.reserve_msat) return 'no_liquidity';
   return null;
@@ -294,39 +308,49 @@ function checkInvoice(text) {
   let inv;
   try { inv = decode(text); } catch (e) { return { err: e.message === 'checksum' ? 'checksum' : 'invalid_invoice' }; }
   if (inv.network !== 'bc') return { err: 'wrong_network' };
-  if (inv.blake2b) return { err: 'is_xbt' };
   if (inv.msat === null) return { err: 'no_amount' };
   if (inv.expiresAt < Date.now() / 1000 + 300) return { err: 'expires_soon' };
-  return { inv };
+  const dir = inv.blake2b ? 'toBLAKE2b' : 'toSHA256';
+  if (dir === 'toBLAKE2b' && !SHA_NODE) return { err: 'no_direction' };
+  return { inv, dir };
 }
 
-async function info() {
+// The bridge's directions by name.
+async function infoAll() {
   const i = await bridge('GET', '/v2/bridge/info');
-  const d = (i.directions || []).find(x => x.name === 'toSHA256');
+  const out = {};
+  for (const d of i.directions || []) if (DIRS.includes(d.name)) out[d.name] = d;
+  if (!SHA_NODE) delete out.toBLAKE2b;
+  return out;
+}
+async function info(dir = 'toSHA256') {
+  const d = (await infoAll())[dir];
   if (!d) throw new Error('no_direction: closed');
   return d;
 }
+// What the payer pays, before the quote, at the bridge's rate (SHA-256 coin per BLAKE2b coin).
+const estimate = (outMsat, d, dir) => Math.ceil((dir === 'toBLAKE2b' ? outMsat * d.rate : outMsat / d.rate) * (1 + d.spread) / 1000);
 
 async function apiCheck(body, who) {
   if (!allow('check:' + who, who === 'tor' ? 90 : 30, 60_000)) return [429, { error: 'limit' }];
-  const { inv, err } = checkInvoice(body.invoice);
+  const { inv, dir, err } = checkInvoice(body.invoice);
   if (err) return [400, { error: err }];
-  const d = await info();
-  if (!d.open) return [400, { error: d.refusal_code || 'unavailable' }];
+  const d = await info(dir);
+  if (!d.open) return [400, { error: d.refusal_code || 'unavailable', dir }];
   const out = Number(inv.msat);
-  if (out < Number(d.min_msat)) return [400, { error: 'too_small', min_sat: Number(d.min_msat) / 1000 }];
-  if (out > Number(d.max_msat)) return [400, { error: 'too_large', max_sat: Number(d.max_msat) / 1000 }];
-  const cap = capCheck(out);
-  if (cap) return [400, { error: cap }];
+  if (out < Number(d.min_msat)) return [400, { error: 'too_small', min_sat: Number(d.min_msat) / 1000, dir }];
+  if (out > Number(d.max_msat)) return [400, { error: 'too_large', max_sat: Number(d.max_msat) / 1000, dir }];
+  const cap = capCheck(out, dir);
+  if (cap) return [400, { error: cap, dir }];
   return [200, {
-    sat: out / 1000,
-    estimate_sat: Math.ceil(out / d.rate * (1 + d.spread) / 1000),
+    dir, sat: out / 1000,
+    estimate_sat: estimate(out, d, dir),
     rate: d.rate, spread: d.spread, wait_s: requoteWait(inv.hash), hash: inv.hash,
   }];
 }
 
 async function apiQuote(body, who) {
-  const { inv, err } = checkInvoice(body.invoice);
+  const { inv, dir, err } = checkInvoice(body.invoice);
   if (err) return [400, { error: err }];
   const wait = requoteWait(inv.hash);
   if (wait) return [409, { error: 'wait', wait_s: wait }];
@@ -341,10 +365,10 @@ async function apiQuote(body, who) {
   if (!ok) return [429, { error: 'limit' }];
   const out = Number(inv.msat);
   // Reserve before asking the bridge, so quotes arriving together all count against the caps.
-  const cap = capCheck(out);
-  if (cap) return [400, { error: cap }];
+  const cap = capCheck(out, dir);
+  if (cap) return [400, { error: cap, dir }];
   const before = live.get(inv.hash);
-  live.set(inv.hash, { out, until: Date.now() + 5 * 60_000 });
+  live.set(inv.hash, { out, until: Date.now() + 5 * 60_000, dir });
   const drop = () => { if (before) live.set(inv.hash, before); else live.delete(inv.hash); saveLive(); };
 
   let q;
@@ -359,20 +383,25 @@ async function apiQuote(body, who) {
   let hold;
   try { hold = decode(q.hold_invoice); } catch { drop(); return [502, { error: 'bad_hold' }]; }
   const hashHex = Buffer.from(q.hash, 'base64').toString('hex');
-  if (hold.hash !== inv.hash || hashHex !== inv.hash || !hold.blake2b || hold.network !== 'bc' ||
+  // The hold invoice is on the payer's chain: BLAKE2b and signed by the bridge's node for
+  // toSHA256, SHA-256 (no option_blake2b) and signed by its SHA-256 node for toBLAKE2b.
+  const toB = dir === 'toBLAKE2b';
+  const signer = toB ? SHA_NODE : NODE;
+  if (hold.hash !== inv.hash || hashHex !== inv.hash || hold.blake2b === toB || hold.network !== 'bc' ||
+      (q.direction && q.direction !== dir) ||
       hold.msat === null || hold.msat !== BigInt(q.incoming_msat) || Number(q.outgoing_msat) !== out ||
-      (NODE && hold.payee !== NODE)) {
+      ((signer || toB) && hold.payee !== signer)) {
     console.error('hold invoice did not match the quote; not offering it');
     drop();
     return [502, { error: 'bad_hold' }];
   }
   // Until the quote can no longer be paid, plus a minute for the watcher to see it funded.
-  live.set(inv.hash, { out, until: Math.max(Number(q.expires_at) * 1000, Date.now()) + 60_000 });
+  live.set(inv.hash, { out, until: Math.max(Number(q.expires_at) * 1000, Date.now()) + 60_000, dir });
   const token = crypto.randomBytes(16).toString('hex');
   tokens.set(inv.hash, { token, until: Date.now() + TOKEN_MS });
   saveLive();
   return [200, {
-    hold_invoice: q.hold_invoice, hash: inv.hash, sat: out / 1000,
+    dir, hold_invoice: q.hold_invoice, hash: inv.hash, sat: out / 1000,
     pay_sat: Math.ceil(Number(q.incoming_msat) / 1000), rate: q.rate, spread: q.spread,
     expires_at: Number(q.expires_at), node: hold.payee, cltv: hold.minCltv, token,
   }];
@@ -451,8 +480,14 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
       return send(res, 200, powChallenge());
     }
     if (req.method === 'GET' && u.pathname === '/api/info') {
-      const d = await info().catch(() => null);
+      const all = await infoAll().catch(() => null);
+      const d = all && all.toSHA256;
       const l = limits();
+      const dirs = {};
+      for (const [name, x] of Object.entries(all || {})) {
+        dirs[name] = { open: x.open && limits(name).ok, rate: x.rate, spread: x.spread,
+          min_sat: Number(x.min_msat) / 1000, max_sat: Number(x.max_msat) / 1000 };
+      }
       // The markets' prices, without the bridge's fee; only while fresh.
       let prices = null;
       try {
@@ -463,8 +498,8 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
       } catch {}
       return send(res, 200, d ? {
         open: d.open && l.ok, rate: d.rate, spread: d.spread,
-        min_sat: Number(d.min_msat) / 1000, max_sat: Number(d.max_msat) / 1000, labels: LABELS, prices,
-      } : { open: false, labels: LABELS, prices });
+        min_sat: Number(d.min_msat) / 1000, max_sat: Number(d.max_msat) / 1000, labels: LABELS, prices, dirs,
+      } : { open: false, labels: LABELS, prices, dirs });
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method' });
     const name = u.pathname === '/' ? 'index.html' : u.pathname.slice(1);

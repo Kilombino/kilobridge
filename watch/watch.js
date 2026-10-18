@@ -22,12 +22,17 @@
 //   LIMITS_FILE      published for the web           (default: /srv/bridge-limits/limits.json)
 //   RESERVE_SAT      SHA-256 outbound kept for other uses of that node (default: 0)
 //   DAILY_CAP_SAT    SHA-256 sats the bridge may pay out a day (default: 1000000)
+//   RESERVE_OWN_SAT  for the reverse direction (toBLAKE2b): this node's outbound kept for
+//                    its other uses (default: 0)
+//   DAILY_CAP_OWN_SAT  this chain's sats the reverse direction may pay out a day (default: 0,
+//                    which keeps it closed on the web)
 //   TIMEZONE         the day boundary                (default: UTC)
 //   WATCH_SPLICES    tell about channel resizes (splices) of this node too (default: 1; 0 = off)
 'use strict';
 const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { decode } = require('../web/bolt11');
 
 const env = process.env;
 const https = require('https');
@@ -42,6 +47,8 @@ const JOURNAL = env.JOURNAL || '/root/.lnd/data/chain/bitcoin/mainnet/bridge/swa
 const STATE = env.STATE_FILE || path.join(env.HOME, '.config/bridge-watch/state.json');
 const RESERVE_MSAT = Number(env.RESERVE_SAT || 0) * 1000;
 const DAILY_CAP_MSAT = Number(env.DAILY_CAP_SAT || 1_000_000) * 1000;
+const RESERVE_OWN_MSAT = Number(env.RESERVE_OWN_SAT || 0) * 1000;
+const DAILY_CAP_OWN_MSAT = Number(env.DAILY_CAP_OWN_SAT || 0) * 1000;
 const TZ = env.TIMEZONE || 'UTC';
 // Words: the language of the messages and what the two sides are called.
 const LANG = env.LANG_MESSAGES === 'es' ? 'es' : 'en';
@@ -60,6 +67,17 @@ const M = {
     settled: (o, i, f, sp, r) => ['✅ Swap done on your bridge', `You paid ${o} ${SHA} and received ${i} ${OWN}.`,
       `Your fee: ~${f} ${OWN} (${sp} %).`, `Price: ${r} ${PRICE}.`],
     usdt: (got, own, sha) => `You got ${OWN_COIN} at ${got} (market ${own}); ${SHA_COIN} was at ${sha}.`,
+    settledB: (o, i, f, sp, r) => ['✅ Reverse swap done on your bridge', `You paid ${o} ${OWN} and received ${i} ${SHA}.`,
+      `Your fee: ~${f} ${SHA} (${sp} %).`, `Price: ${r} ${PRICE}.`],
+    usdtB: (got, own, sha) => `You sold ${OWN_COIN} at ${got} (market ${own}); ${SHA_COIN} was at ${sha}.`,
+    failedB: (o, i) => ['↩️ Reverse swap failed, refunded', `The ${OWN_COIN} invoice of ${o} ${OWN} could not be paid; the payer's ${i} ${SHA} went back. You lose nothing.`],
+    abortedB: (o, i) => ['↩️ Reverse swap called off before paying', `The price moved against you (${o} ${OWN}); the payer's ${i} ${SHA} went back. You lose nothing.`],
+    lostB: (o, i) => ['🚨 Reverse swap LOST', `${o} ${OWN} were paid but the ${i} ${SHA} could not be collected.`, 'Look at `lncli bridge status` now.'],
+    capB: (pct, t, c) => `${pct === 1 ? '⛔ Daily cap of the reverse direction reached' : '⚠️ 80 % of the reverse direction\'s daily cap'}: ${t} of ${c} ${OWN} paid out today.`,
+    lowB: (o, r) => `🟠 This node's outbound is down to ${o} ${OWN}, under the ${r} reserve. The web stops quoting the reverse direction until it is back.`,
+    okB: (o) => `🟢 This node's outbound is above the reserve again (${o} ${OWN}).`,
+    closedB: (code, why) => `⏸️ The reverse direction (paying ${OWN_COIN} invoices) is not quoting (${code}): ${why}.`,
+    openB: '▶️ The reverse direction is quoting again.',
     failed: (o, i) => ['↩️ Swap failed, refunded', `The ${CHAIN} invoice of ${o} ${SHA} could not be paid; the payer's ${i} ${OWN} went back. You lose nothing.`],
     aborted: (o, i) => ['↩️ Swap called off before paying', `The price moved against you (${o} ${SHA}); the payer's ${i} ${OWN} went back. You lose nothing.`],
     lost: (o, i) => ['🚨 Swap LOST', `${o} ${SHA} were paid but the ${i} ${OWN} could not be collected.`, 'Look at `lncli bridge status` now.'],
@@ -85,6 +103,17 @@ const M = {
     settled: (o, i, f, sp, r) => ['✅ Cambio hecho en tu bridge', `Pagaste ${o} ${SHA} y te han llegado ${i} ${OWN}.`,
       `Tu comisión: ~${f} ${OWN} (${sp} %).`, `Precio: ${r} ${PRICE}.`],
     usdt: (got, own, sha) => `Conseguiste ${OWN_COIN} a ${got} (mercado ${own}); ${SHA_COIN} estaba a ${sha}.`,
+    settledB: (o, i, f, sp, r) => ['✅ Cambio inverso hecho en tu bridge', `Pagaste ${o} ${OWN} y te han llegado ${i} ${SHA}.`,
+      `Tu comisión: ~${f} ${SHA} (${sp} %).`, `Precio: ${r} ${PRICE}.`],
+    usdtB: (got, own, sha) => `Vendiste ${OWN_COIN} a ${got} (mercado ${own}); ${SHA_COIN} estaba a ${sha}.`,
+    failedB: (o, i) => ['↩️ Cambio inverso fallido, devuelto', `No se pudo pagar la factura ${OWN_COIN} de ${o} ${OWN}; los ${i} ${SHA} han vuelto a quien pagó. No pierdes nada.`],
+    abortedB: (o, i) => ['↩️ Cambio inverso anulado antes de pagar', `El precio se movió en tu contra (${o} ${OWN}); los ${i} ${SHA} han vuelto a quien pagó. No pierdes nada.`],
+    lostB: (o, i) => ['🚨 Swap inverso PERDIDO', `Se pagaron ${o} ${OWN} pero no se pudo cobrar la otra parte (${i} ${SHA}).`, 'Mira `lncli bridge status` cuanto antes.'],
+    capB: (pct, t, c) => `${pct === 1 ? '⛔ Tope diario del sentido inverso alcanzado' : '⚠️ 80 % del tope diario del sentido inverso'}: hoy van ${t} de ${c} ${OWN} pagados.`,
+    lowB: (o, r) => `🟠 La salida de tu nodo ${OWN_COIN} ha bajado a ${o} ${OWN}, por debajo de la reserva de ${r}. La web deja de cotizar el sentido inverso hasta que se reponga.`,
+    okB: (o) => `🟢 La salida de tu nodo ${OWN_COIN} vuelve a estar por encima de la reserva (${o} ${OWN}).`,
+    closedB: (code, why) => `⏸️ El sentido inverso (pagar facturas ${OWN_COIN}) no está cotizando (${code}): ${why}.`,
+    openB: '▶️ El sentido inverso vuelve a cotizar.',
     failed: (o, i) => ['↩️ Cambio fallido, devuelto', `No se pudo pagar la factura ${CHAIN} de ${o} ${SHA}; los ${i} ${OWN} han vuelto a quien pagó. No pierdes nada.`],
     aborted: (o, i) => ['↩️ Cambio anulado antes de pagar', `El precio se movió en tu contra (${o} ${SHA}); los ${i} ${OWN} han vuelto a quien pagó. No pierdes nada.`],
     lost: (o, i) => ['🚨 Swap PERDIDO', `Se pagaron ${o} ${SHA} pero no se pudo cobrar la otra parte (${i} ${OWN}).`, 'Mira `lncli bridge status` cuanto antes.'],
@@ -215,26 +244,46 @@ const usdt = v => v.toLocaleString(LANG === 'es' ? 'es-ES' : 'en-US', { minimumF
 
 // The USDT prices of both coins when the swap is told, and what one coin cost the payer here:
 // the SHA-256 side paid out, valued at its price, over the coins received.
+// The reverse direction (toBLAKE2b) sells this chain's coin: the SHA-256 side received, at its
+// price, over the coins paid out.
 async function usdtLine(r) {
   if (!USDT_OWN || r.state !== 'settled') return null;
   try {
     const [own, sha] = await Promise.all([lastUsdt(USDT_OWN), USDT_SHA === 'BTC_USDT' ? majorBtcUsdt() : lastUsdt(USDT_SHA)]);
+    if (dirOf(r) === 'toBLAKE2b') return M.usdtB(usdt(Number(r.incoming_msat) * sha / Number(r.outgoing_msat)), usdt(own), usdt(sha));
     const got = Number(r.outgoing_msat) * sha / Number(r.incoming_msat);
     return M.usdt(usdt(got), usdt(own), usdt(sha));
   } catch { return null; }
 }
 
+// The journal does not say which way a swap went; the invoice paid out does: one with
+// option_blake2b was paid on this chain.
+// Decoding recovers the signer, so each invoice is decoded once.
+const dirs = new Map();
+function dirOf(r) {
+  const inv = r.invoice || '';
+  if (!dirs.has(inv)) {
+    let d = 'toSHA256';
+    try { if (decode(inv).blake2b) d = 'toBLAKE2b'; } catch {}
+    dirs.set(inv, d);
+  }
+  return dirs.get(inv);
+}
+
 function swapText(r) {
   const out = Number(r.outgoing_msat), inc = Number(r.incoming_msat), rate = Number(r.rate);
-  const fee = rate > 0 ? inc - out / rate : 0;
+  const rev = dirOf(r) === 'toBLAKE2b';
+  // The rate is SHA-256 coin per BLAKE2b coin either way; the fee is in what came in.
+  const fee = rate > 0 ? inc - (rev ? out * rate : out / rate) : 0;
   const lines = [];
+  const B = rev ? 'B' : '';
   switch (r.state) {
     case 'settled':
-      lines.push(...M.settled(sats(out), sats(inc), sats(fee), (Number(r.spread) * 100).toFixed(2), rate.toFixed(8)));
+      lines.push(...M['settled' + B](sats(out), sats(inc), sats(fee), (Number(r.spread) * 100).toFixed(2), rate.toFixed(8)));
       break;
-    case 'failed': lines.push(...M.failed(sats(out), sats(inc))); break;
-    case 'aborted': lines.push(...M.aborted(sats(out), sats(inc))); break;
-    case 'lost': lines.push(...M.lost(sats(out), sats(inc))); break;
+    case 'failed': lines.push(...M['failed' + B](sats(out), sats(inc))); break;
+    case 'aborted': lines.push(...M['aborted' + B](sats(out), sats(inc))); break;
+    case 'lost': lines.push(...M['lost' + B](sats(out), sats(inc))); break;
     default:
       return null;
   }
@@ -248,13 +297,20 @@ async function tick(st) {
   const first = !st.seen;
   st.seen ||= {};
   const today = dayOf(Date.now());
-  let todayMsat = 0;
+  let todayMsat = 0, todayOwnMsat = 0;
   // Swaps the bridge has been paid for and not finished: they count against the cap and the
   // reserve for as long as they take (the web only holds a quote until it can be paid).
-  const pending = {};
+  // Each direction on its own, in the units of the chain it pays on.
+  const pending = {}, pendingOwn = {};
   for (const [key, r] of all) {
-    if (r.state === 'settled' && dayOf(r.updated || r.created) === today) todayMsat += Number(r.outgoing_msat);
-    if (['funded', 'paying', 'paid', 'failing'].includes(r.state)) pending[r.hash] = Math.max(pending[r.hash] || 0, Number(r.outgoing_msat) || 0);
+    const rev = dirOf(r) === 'toBLAKE2b';
+    if (r.state === 'settled' && dayOf(r.updated || r.created) === today) {
+      if (rev) todayOwnMsat += Number(r.outgoing_msat); else todayMsat += Number(r.outgoing_msat);
+    }
+    if (['funded', 'paying', 'paid', 'failing'].includes(r.state)) {
+      const p = rev ? pendingOwn : pending;
+      p[r.hash] = Math.max(p[r.hash] || 0, Number(r.outgoing_msat) || 0);
+    }
     const done = ['settled', 'failed', 'aborted', 'lost', 'expired'].includes(r.state);
     if (!done || st.seen[key]) continue;
     // A swap that was never funded only expired: nothing to say.
@@ -273,6 +329,14 @@ async function tick(st) {
     const k = `${today}:${pct}`;
     if (todayMsat >= DAILY_CAP_MSAT * pct && !st.dayAlert[k]) {
       await tell(M.cap(pct, sats(todayMsat), sats(DAILY_CAP_MSAT)));
+      st.dayAlert[k] = true;
+      break;
+    }
+  }
+  for (const pct of [1, 0.8]) {
+    const k = `${today}:B:${pct}`;
+    if (DAILY_CAP_OWN_MSAT > 0 && todayOwnMsat >= DAILY_CAP_OWN_MSAT * pct && !st.dayAlert[k]) {
+      await tell(M.capB(pct, sats(todayOwnMsat), sats(DAILY_CAP_OWN_MSAT)));
       st.dayAlert[k] = true;
       break;
     }
@@ -296,18 +360,33 @@ async function tick(st) {
   // ~17 h closed with chain_unmeasured after a difficulty epoch began). Only while healthy, so a
   // node that is down is told once, as down.
   if (healthy) {
-    let dir = null;
-    try { dir = ((await lncli('bridge', 'info')).directions || []).find(d => d.name === 'toSHA256'); } catch {}
-    if (dir) {
-      st.closed = dir.open ? 0 : (st.closed || 0) + 1;
-      if (st.closed === 3 && !st.closedTold) {
-        await tell(M.closed(dir.refusal_code || '?', dir.refusal || '?'));
-        st.closedTold = true;
-      } else if (dir.open && st.closedTold) {
-        await tell(M.open);
-        st.closedTold = false;
+    let dirs = [];
+    try { dirs = (await lncli('bridge', 'info')).directions || []; } catch {}
+    // The reverse direction only once it is offered on the web (it has a cap).
+    for (const [name, B] of [['toSHA256', ''], ['toBLAKE2b', 'B']]) {
+      const dir = dirs.find(d => d.name === name);
+      if (!dir || (B && !DAILY_CAP_OWN_MSAT)) continue;
+      const c = 'closed' + B, told = 'closedTold' + B;
+      st[c] = dir.open ? 0 : (st[c] || 0) + 1;
+      if (st[c] === 3 && !st[told]) {
+        await tell(M['closed' + B](dir.refusal_code || '?', dir.refusal || '?'));
+        st[told] = true;
+      } else if (dir.open && st[told]) {
+        await tell(M['open' + B]);
+        st[told] = false;
       }
     }
+  }
+
+  // This node's own outbound, for the reverse direction: what its active channels can send,
+  // less what each keeps as its reserve. Unread (null) closes that direction on the web.
+  let ownOutMsat = null;
+  if (DAILY_CAP_OWN_MSAT > 0) {
+    try {
+      const { channels } = await lncli('listchannels');
+      ownOutMsat = channels.filter(ch => ch.active)
+        .reduce((a, ch) => a + Math.max(0, Number(ch.local_balance) - Number(ch.local_constraints?.chan_reserve_sat ?? ch.local_chan_reserve_sat ?? 0)) * 1000, 0);
+    } catch (e) { console.error(new Date().toISOString(), 'own outbound:', e.message); }
   }
 
   const ops = (s.needs_operator || []).map(x => typeof x === 'string' ? x : (x.hash || JSON.stringify(x)));
@@ -321,6 +400,10 @@ async function tick(st) {
     updated: Date.now(), day: today, today_msat: todayMsat, daily_cap_msat: DAILY_CAP_MSAT,
     healthy: !!healthy, outbound_msat: node.outbound_msat === undefined ? null : Number(node.outbound_msat),
     reserve_msat: RESERVE_MSAT, pending,
+    to_blake2b: DAILY_CAP_OWN_MSAT > 0 ? {
+      today_msat: todayOwnMsat, daily_cap_msat: DAILY_CAP_OWN_MSAT, outbound_msat: ownOutMsat,
+      reserve_msat: RESERVE_OWN_MSAT, pending: pendingOwn,
+    } : null,
   };
   fs.writeFileSync(LIMITS + '.tmp', JSON.stringify(limits), { mode: 0o644 });
   fs.chmodSync(LIMITS + '.tmp', 0o644); // the web runs as another user
@@ -339,6 +422,15 @@ async function tick(st) {
     } else if (outMsat >= RESERVE_MSAT * 1.05 && st.lowTold) {
       await tell(M.ok(sats(outMsat)));
       st.lowTold = false;
+    }
+  }
+  if (ownOutMsat !== null) {
+    if (ownOutMsat < RESERVE_OWN_MSAT && !st.lowToldB) {
+      await tell(M.lowB(sats(ownOutMsat), sats(RESERVE_OWN_MSAT)));
+      st.lowToldB = true;
+    } else if (ownOutMsat >= RESERVE_OWN_MSAT * 1.05 && st.lowToldB) {
+      await tell(M.okB(sats(ownOutMsat)));
+      st.lowToldB = false;
     }
   }
 }

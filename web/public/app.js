@@ -2,26 +2,27 @@
 (() => {
   const T = {
     en: {
-      lead: 'Pay a {CHAIN} Lightning invoice with your {COIN}. Your {COIN} payment is held and only collected once the invoice has been paid; otherwise it comes back to you by itself.',
-      paste: '{CHAIN} Lightning invoice to pay', pasteBtn: 'Paste', scan: 'Scan QR', check: 'Check price',
+      lead: 'Pay a Lightning invoice of one chain with the other one\'s coins: a {CHAIN} invoice with {COIN}, or a {COIN} invoice with {SHACOIN}. Your payment is held and only collected once the invoice has been paid; otherwise it comes back to you by itself.',
+      paste: 'Lightning invoice to pay ({CHAIN} or {COIN}: it is detected)', pasteBtn: 'Paste', scan: 'Scan QR', check: 'Check price',
+      dirL: 'Direction', dirSha: '{CHAIN} invoice → you pay with {COIN}', dirOwn: '{COIN} invoice → you pay with {SHACOIN}',
       youSend: 'Invoice to pay', youPay: 'You pay about', price: 'Price', fee: 'Fee',
       estimateNote: 'The final price is set when you press the button: you then have 1 minute to pay.',
-      back: 'Back', getInvoice: 'Get the {COIN} invoice',
-      payExactly: 'Pay', ownUnit: '{OWN}', expiresIn: 'Price held for', copy: 'Copy invoice', copied: 'Copied ✓', open: 'Open in wallet',
-      holdNote: 'Pay it from any {COIN} Lightning wallet. The payment stays on hold until the {CHAIN} invoice is paid.',
+      back: 'Back', getInvoice: 'Get the {PAYCOIN} invoice',
+      payExactly: 'Pay', ownUnit: '{PAYUNIT}', expiresIn: 'Price held for', copy: 'Copy invoice', copied: 'Copied ✓', open: 'Open in wallet',
+      holdNote: 'Pay it from any {PAYCOIN} Lightning wallet. The payment stays on hold until the {INVCHAIN} invoice is paid.',
       waiting: 'Waiting for your payment…', funded: 'Payment received, paying the invoice…', paying: 'Paying the invoice…',
-      doneTitle: 'Paid ✓', doneText: (s) => `The ${s} {SHA} invoice has been paid.`,
+      doneTitle: 'Paid ✓', doneText: (s) => `The ${s} {INVUNIT} invoice has been paid.`,
       proof: 'Proof of payment (preimage):',
       expiredTitle: 'The price expired', expiredText: 'Nothing was charged. You can get a new price.',
-      failedTitle: 'Not paid', failedText: 'The invoice could not be paid. Your {COIN} payment has been returned, nothing was charged.',
+      failedTitle: 'Not paid', failedText: 'The invoice could not be paid. Your {PAYCOIN} payment has been returned, nothing was charged.',
       lostTitle: 'Needs a look', lostText: 'Something unusual happened. Contact {OP} with the payment hash.',
       again: 'Pay another invoice', newPrice: 'Get a new price',
       howTitle: 'How it works',
-      how1: 'Paste or scan the {CHAIN} invoice you want paid and check the price.',
-      how2: 'Get a {COIN} invoice with the same payment hash and pay it within 1 minute.',
+      how1: 'Paste or scan the invoice you want paid, {CHAIN} or {COIN}, and check the price. The page tells which one it is.',
+      how2: 'Get an invoice of the other chain with the same payment hash and pay it within 1 minute.',
       pricesNote: 'Market prices, without the bridge\'s fee. Updated every minute.',
-      how3: 'The bridge pays the {CHAIN} invoice and only then collects your {COIN}. If it cannot, your payment comes back by itself.',
-      limits: (min, max) => `Invoices from ${min} to ${max} {SHA}. No accounts, nothing stored about you.`,
+      how3: 'The bridge pays your invoice and only then collects your payment. If it cannot, your payment comes back by itself.',
+      limits: (r) => `${r}. No accounts, nothing stored about you.`, range: (min, max, u, c) => `${c} invoices from ${min} to ${max} ${u}`, fee2: 'fee',
       footer: 'Non-custodial bridge by {OP}',
       ownTitle: 'Run your own bridge',
       own1: 'One bridge is a single point of failure: it can run out of liquidity, go offline or be pressured. Many bridges run by different people make crossing between {COIN} and {CHAIN} as decentralized as the chains themselves. More bridges are welcome.',
@@ -35,8 +36,8 @@
         checksum: 'That invoice is damaged (checksum). Copy it again, ideally from the wallet itself.',
         invalid_invoice: 'That doesn’t look like a Lightning invoice.', wrong_network: 'That invoice is not for mainnet.',
         is_xbt: 'That is a {COIN} invoice: pay it directly from your {COIN} wallet.', no_amount: 'The invoice has no amount. Ask for one with an amount.',
-        expires_soon: 'The invoice expires too soon. Ask for a new one.', too_small: (d) => `Too small: at least ${d.min_sat} {SHA}.`,
-        too_large: (d) => `Too large: at most ${d.max_sat} {SHA}.`, daily_cap: 'The bridge has reached its limit for today. Try again tomorrow.',
+        expires_soon: 'The invoice expires too soon. Ask for a new one.', too_small: (d) => `Too small: at least ${d.min_sat} {INVUNIT}.`,
+        too_large: (d) => `Too large: at most ${d.max_sat} {INVUNIT}.`, daily_cap: 'The bridge has reached its limit for today. Try again tomorrow.',
         no_liquidity: 'Not enough liquidity right now for that amount. Try a smaller one or later.',
         price_unavailable: 'No reliable price right now (the market is moving or can’t be read). Try again in a few minutes.',
         chain_unmeasured: 'The bridge is warming up. Try again in a few minutes.',
@@ -45,31 +46,32 @@
         needs_operator: 'This invoice needs {OP} to look at it.', limit: 'Too many requests. Wait a minute and try again.',
         pow_expired: 'That took too long. Try again.', pow_used: 'Try again.', pow_invalid: 'Try again.', pow_missing: 'Reload the page and try again.',
         wait: (d) => `Wait ${d.wait_s} s before asking for a new price for this invoice.`,
-        no_direction: 'This bridge doesn’t pay that kind of invoice.', bad_hold: 'The bridge gave an invoice that didn’t check out, so it isn’t shown. Try again.',
+        no_direction: 'This bridge isn’t paying that kind of invoice right now.', bad_hold: 'The bridge gave an invoice that didn’t check out, so it isn’t shown. Try again.',
         unavailable: 'The bridge is not available right now. Try again later.', network: 'Can’t reach the server. Check your connection.',
       },
     },
     es: {
-      lead: 'Paga una factura Lightning {CHAIN} con tu {COIN}. Tu pago en {COIN} queda retenido y solo se cobra cuando la factura se ha pagado; si no, vuelve a ti solo.',
-      paste: 'Factura Lightning {CHAIN} a pagar', pasteBtn: 'Pegar', scan: 'Escanear QR', check: 'Ver precio',
+      lead: 'Paga una factura Lightning de una cadena con monedas de la otra: una factura {CHAIN} con {COIN}, o una factura {COIN} con {SHACOIN}. Tu pago queda retenido y solo se cobra cuando la factura se ha pagado; si no, vuelve a ti solo.',
+      paste: 'Factura Lightning a pagar ({CHAIN} o {COIN}: se detecta sola)', pasteBtn: 'Pegar', scan: 'Escanear QR', check: 'Ver precio',
+      dirL: 'Sentido', dirSha: 'Factura {CHAIN} → pagas con {COIN}', dirOwn: 'Factura {COIN} → pagas con {SHACOIN}',
       youSend: 'Factura a pagar', youPay: 'Pagas unos', price: 'Precio', fee: 'Comisión',
       estimateNote: 'El precio final se fija al pulsar el botón: desde ese momento tienes 1 minuto para pagar.',
-      back: 'Atrás', getInvoice: 'Obtener la factura {COIN}',
-      payExactly: 'Paga', ownUnit: '{OWN}', expiresIn: 'Precio garantizado durante', copy: 'Copiar factura', copied: 'Copiada ✓', open: 'Abrir en la wallet',
-      holdNote: 'Págala desde cualquier wallet Lightning de {COIN}. El pago queda retenido hasta que se paga la factura {CHAIN}.',
+      back: 'Atrás', getInvoice: 'Obtener la factura {PAYCOIN}',
+      payExactly: 'Paga', ownUnit: '{PAYUNIT}', expiresIn: 'Precio garantizado durante', copy: 'Copiar factura', copied: 'Copiada ✓', open: 'Abrir en la wallet',
+      holdNote: 'Págala desde cualquier wallet Lightning de {PAYCOIN}. El pago queda retenido hasta que se paga la factura {INVCHAIN}.',
       waiting: 'Esperando tu pago…', funded: 'Pago recibido, pagando la factura…', paying: 'Pagando la factura…',
-      doneTitle: 'Pagada ✓', doneText: (s) => `La factura de ${s} {SHA} está pagada.`,
+      doneTitle: 'Pagada ✓', doneText: (s) => `La factura de ${s} {INVUNIT} está pagada.`,
       proof: 'Justificante de pago (preimagen):',
       expiredTitle: 'El precio ha caducado', expiredText: 'No se ha cobrado nada. Puedes pedir un precio nuevo.',
-      failedTitle: 'No se ha pagado', failedText: 'No se pudo pagar la factura. Tu pago en {COIN} ha vuelto, no se ha cobrado nada.',
+      failedTitle: 'No se ha pagado', failedText: 'No se pudo pagar la factura. Tu pago en {PAYCOIN} ha vuelto, no se ha cobrado nada.',
       lostTitle: 'Hay que revisarlo', lostText: 'Ha pasado algo raro. Escribe a {OP} con el hash del pago.',
       again: 'Pagar otra factura', newPrice: 'Pedir precio nuevo',
       howTitle: 'Cómo funciona',
-      how1: 'Pega o escanea la factura {CHAIN} que quieres pagar y mira el precio.',
-      how2: 'Obtén una factura {COIN} con el mismo hash de pago y págala en menos de 1 minuto.',
+      how1: 'Pega o escanea la factura que quieres pagar, {CHAIN} o {COIN}, y mira el precio. La página detecta cuál es.',
+      how2: 'Obtén una factura de la otra cadena con el mismo hash de pago y págala en menos de 1 minuto.',
       pricesNote: 'Precios de mercado, sin la comisión del puente. Se actualizan cada minuto.',
-      how3: 'El bridge paga la factura {CHAIN} y solo entonces cobra tus {COIN}. Si no puede, tu pago vuelve solo.',
-      limits: (min, max) => `Facturas de ${min} a ${max} {SHA}. Sin cuentas, no se guarda nada sobre ti.`,
+      how3: 'El bridge paga tu factura y solo entonces cobra tu pago. Si no puede, tu pago vuelve solo.',
+      limits: (r) => `${r}. Sin cuentas, no se guarda nada sobre ti.`, range: (min, max, u, c) => `Facturas ${c} de ${min} a ${max} ${u}`, fee2: 'comisión',
       footer: 'Bridge sin custodia de {OP}',
       ownTitle: 'Monta tu propio bridge',
       own1: 'Un solo bridge es un punto único de fallo: se puede quedar sin liquidez, caerse o sufrir presiones. Muchos bridges de personas distintas hacen que pasar entre {COIN} y {CHAIN} sea tan descentralizado como las propias cadenas. Cuantos más bridges, mejor.',
@@ -83,8 +85,8 @@
         checksum: 'Esa factura está dañada (checksum). Cópiala otra vez, mejor desde la propia wallet.',
         invalid_invoice: 'Eso no parece una factura Lightning.', wrong_network: 'Esa factura no es de mainnet.',
         is_xbt: 'Esa es una factura {COIN}: págala directamente desde tu wallet {COIN}.', no_amount: 'La factura no lleva importe. Pide una con importe.',
-        expires_soon: 'La factura caduca demasiado pronto. Pide una nueva.', too_small: (d) => `Demasiado pequeña: mínimo ${d.min_sat} {SHA}.`,
-        too_large: (d) => `Demasiado grande: máximo ${d.max_sat} {SHA}.`, daily_cap: 'El bridge ha llegado a su límite de hoy. Prueba mañana.',
+        expires_soon: 'La factura caduca demasiado pronto. Pide una nueva.', too_small: (d) => `Demasiado pequeña: mínimo ${d.min_sat} {INVUNIT}.`,
+        too_large: (d) => `Demasiado grande: máximo ${d.max_sat} {INVUNIT}.`, daily_cap: 'El bridge ha llegado a su límite de hoy. Prueba mañana.',
         no_liquidity: 'Ahora no hay liquidez suficiente para ese importe. Prueba con menos o más tarde.',
         price_unavailable: 'Ahora no hay un precio fiable (el mercado se mueve o no se puede leer). Prueba en unos minutos.',
         chain_unmeasured: 'El bridge está arrancando. Prueba en unos minutos.',
@@ -93,7 +95,7 @@
         needs_operator: 'Esta factura necesita que la revise {OP}.', limit: 'Demasiadas peticiones. Espera un minuto y vuelve a probar.',
         pow_expired: 'Ha tardado demasiado. Prueba otra vez.', pow_used: 'Prueba otra vez.', pow_invalid: 'Prueba otra vez.', pow_missing: 'Recarga la página y prueba otra vez.',
         wait: (d) => `Espera ${d.wait_s} s antes de pedir otro precio para esta factura.`,
-        no_direction: 'Este bridge no paga ese tipo de factura.', bad_hold: 'El bridge dio una factura que no cuadraba y no se muestra. Prueba otra vez.',
+        no_direction: 'Este bridge ahora no está pagando ese tipo de factura.', bad_hold: 'El bridge dio una factura que no cuadraba y no se muestra. Prueba otra vez.',
         unavailable: 'El bridge no está disponible ahora. Prueba más tarde.', network: 'No se puede contactar con el servidor. Revisa tu conexión.',
       },
     },
@@ -108,8 +110,13 @@
   const fill = (v) => typeof v === 'string'
     ? v.replace(/\{OP\}/g, L.op).replace(/\{CHAIN\}/g, L.chain).replace(/\{SHA\}/g, L.sha)
         .replace(/\{OWN\}/g, L.own).replace(/\{COIN\}/g, L.coin).replace(/\{PRICE\}/g, L.price)
+        .replace(/\{SHACOIN\}/g, L.shaCoin)
+        // The invoice's side and the payer's, by the direction of the invoice in hand.
+        .replace(/\{INVUNIT\}/g, rev ? L.own : L.sha).replace(/\{INVCHAIN\}/g, rev ? L.coin : L.chain)
+        .replace(/\{PAYUNIT\}/g, rev ? L.sha : L.own).replace(/\{PAYCOIN\}/g, rev ? L.shaCoin : L.coin)
     : typeof v === 'function' ? (...a) => fill(v(...a)) : v;
   const t = () => new Proxy(T[lang], { get: (o, k) => k === 'e' ? new Proxy(o.e, { get: (e, c) => fill(e[c]) }) : fill(o[k]) });
+  let rev = false; // the invoice in hand is a {COIN} one, paid with {SHACOIN} (toBLAKE2b)
   let meta = null, quote = null, timer = null, poll = null, sat = 0, payHash = '';
 
   const nf = () => new Intl.NumberFormat(lang === 'es' ? 'es-ES' : 'en-US', { useGrouping: 'always' });
@@ -119,7 +126,14 @@
     document.documentElement.lang = lang;
     document.querySelectorAll('[data-t]').forEach((el) => { const v = t()[el.dataset.t]; if (typeof v === 'string') el.textContent = v; });
     document.querySelectorAll('.lang button').forEach((b) => b.classList.toggle('on', b.dataset.lang === lang));
-    if (meta) $('limitsNote').textContent = t().limits(fmt(meta.min_sat), fmt(meta.max_sat));
+    if (meta) {
+      // Each direction the bridge offers, with its range and fee.
+      const dirs = meta.dirs || { toSHA256: meta };
+      const parts = [];
+      if (dirs.toSHA256) parts.push(`${t().range(fmt(dirs.toSHA256.min_sat), fmt(dirs.toSHA256.max_sat), L.sha, L.chain)} (${(dirs.toSHA256.spread * 100).toFixed(0)} % ${t().fee2})`);
+      if (dirs.toBLAKE2b) parts.push(`${t().range(fmt(dirs.toBLAKE2b.min_sat), fmt(dirs.toBLAKE2b.max_sat), L.own, L.coin)} (${(dirs.toBLAKE2b.spread * 100).toFixed(0)} % ${t().fee2})`);
+      $('limitsNote').textContent = t().limits(parts.join('; '));
+    }
     showPrices();
   }
 
@@ -172,11 +186,14 @@
     $('checkBtn').disabled = true;
     const d = await api('/api/check', { invoice: invoice() });
     $('checkBtn').disabled = false;
+    rev = d.dir === 'toBLAKE2b';
+    applyLang();
     if (d.error) return showErr('err1', d);
     sat = d.sat;
     payHash = d.hash || '';
-    $('sumSat').textContent = `${fmt(d.sat)} ${L.sha}`;
-    $('sumPay').textContent = `${fmt(d.estimate_sat)} ${L.own}`;
+    $('sumDir').textContent = rev ? t().dirOwn : t().dirSha;
+    $('sumSat').textContent = `${fmt(d.sat)} ${rev ? L.own : L.sha}`;
+    $('sumPay').textContent = `${fmt(d.estimate_sat)} ${rev ? L.sha : L.own}`;
     $('sumRate').textContent = `${d.rate.toFixed(8)} ${L.price}`;
     $('sumFee').textContent = `${(d.spread * 100).toFixed(2)} %`;
     show('step2');
