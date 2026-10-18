@@ -328,8 +328,9 @@ async function info(dir = 'toSHA256') {
   if (!d) throw new Error('no_direction: closed');
   return d;
 }
-// What the payer pays, before the quote, at the bridge's rate (SHA-256 coin per BLAKE2b coin).
-const estimate = (outMsat, d, dir) => Math.ceil((dir === 'toBLAKE2b' ? outMsat * d.rate : outMsat / d.rate) * (1 + d.spread) / 1000);
+// What the payer pays, before the quote. Each direction's rate is what it pays out per coin
+// paid in (SHA-256 per BLAKE2b for toSHA256, BLAKE2b per SHA-256 for toBLAKE2b).
+const estimate = (outMsat, d) => Math.ceil(outMsat / d.rate * (1 + d.spread) / 1000);
 
 async function apiCheck(body, who) {
   if (!allow('check:' + who, who === 'tor' ? 90 : 30, 60_000)) return [429, { error: 'limit' }];
@@ -338,13 +339,13 @@ async function apiCheck(body, who) {
   const d = await info(dir);
   if (!d.open) return [400, { error: d.refusal_code || 'unavailable', dir }];
   const out = Number(inv.msat);
-  if (out < Number(d.min_msat)) return [400, { error: 'too_small', min_sat: Number(d.min_msat) / 1000, dir }];
-  if (out > Number(d.max_msat)) return [400, { error: 'too_large', max_sat: Number(d.max_msat) / 1000, dir }];
+  if (out < Number(d.min_msat)) return [400, { error: 'too_small', min_sat: Math.ceil(Number(d.min_msat) / 1000), dir }];
+  if (out > Number(d.max_msat)) return [400, { error: 'too_large', max_sat: Math.floor(Number(d.max_msat) / 1000), dir }];
   const cap = capCheck(out, dir);
   if (cap) return [400, { error: cap, dir }];
   return [200, {
     dir, sat: out / 1000,
-    estimate_sat: estimate(out, d, dir),
+    estimate_sat: estimate(out, d),
     rate: d.rate, spread: d.spread, wait_s: requoteWait(inv.hash), hash: inv.hash,
   }];
 }
@@ -486,7 +487,7 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
       const dirs = {};
       for (const [name, x] of Object.entries(all || {})) {
         dirs[name] = { open: x.open && limits(name).ok, rate: x.rate, spread: x.spread,
-          min_sat: Number(x.min_msat) / 1000, max_sat: Number(x.max_msat) / 1000 };
+          min_sat: Math.ceil(Number(x.min_msat) / 1000), max_sat: Math.floor(Number(x.max_msat) / 1000) };
       }
       // The markets' prices, without the bridge's fee; only while fresh.
       let prices = null;

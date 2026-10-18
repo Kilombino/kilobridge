@@ -194,7 +194,8 @@
     $('sumDir').textContent = rev ? t().dirOwn : t().dirSha;
     $('sumSat').textContent = `${fmt(d.sat)} ${rev ? L.own : L.sha}`;
     $('sumPay').textContent = `${fmt(d.estimate_sat)} ${rev ? L.sha : L.own}`;
-    $('sumRate').textContent = `${d.rate.toFixed(8)} ${L.price}`;
+    // The price is shown as SHA-256 per BLAKE2b either way; the reverse direction's rate is its inverse.
+    $('sumRate').textContent = `${(rev ? 1 / d.rate : d.rate).toFixed(8)} ${L.price}`;
     $('sumFee').textContent = `${(d.spread * 100).toFixed(2)} %`;
     show('step2');
     if (d.wait_s) showErr('err2', { error: 'wait', wait_s: d.wait_s });

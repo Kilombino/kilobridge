@@ -273,13 +273,15 @@ function dirOf(r) {
 function swapText(r) {
   const out = Number(r.outgoing_msat), inc = Number(r.incoming_msat), rate = Number(r.rate);
   const rev = dirOf(r) === 'toBLAKE2b';
-  // The rate is SHA-256 coin per BLAKE2b coin either way; the fee is in what came in.
-  const fee = rate > 0 ? inc - (rev ? out * rate : out / rate) : 0;
+  // The rate is what the swap pays out per coin paid in (BLAKE2b per SHA-256 for the reverse
+  // direction); the fee is in what came in. The price is told as SHA-256 per BLAKE2b either way.
+  const fee = rate > 0 ? inc - out / rate : 0;
+  const price = rev && rate > 0 ? 1 / rate : rate;
   const lines = [];
   const B = rev ? 'B' : '';
   switch (r.state) {
     case 'settled':
-      lines.push(...M['settled' + B](sats(out), sats(inc), sats(fee), (Number(r.spread) * 100).toFixed(2), rate.toFixed(8)));
+      lines.push(...M['settled' + B](sats(out), sats(inc), sats(fee), (Number(r.spread) * 100).toFixed(2), price.toFixed(8)));
       break;
     case 'failed': lines.push(...M['failed' + B](sats(out), sats(inc))); break;
     case 'aborted': lines.push(...M['aborted' + B](sats(out), sats(inc))); break;
