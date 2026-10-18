@@ -73,3 +73,10 @@ footer a { color: inherit; }
 .scanbox { position: relative; width: min(100%, 420px); background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; }
 .scanbox video { width: 100%; border-radius: 12px; display: block; background: #000; aspect-ratio: 1; object-fit: cover; }
 .frame { position: absolute; left: 22%; right: 22%; top: 18%; aspect-ratio: 1; border: 3px solid var(--gold); border-radius: 16px; box-shadow: 0 0 20px var(--glow); pointer-events: none; }
+
+.prices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 20px; }
+.pcard { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.plabel { color: var(--muted); font-size: .8rem; }
+.pcard strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pnote { grid-column: 1 / -1; color: var(--muted); font-size: .78rem; margin: 0; }
+@media (max-width: 420px) { .prices { grid-template-columns: 1fr; } }

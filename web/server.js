@@ -44,6 +44,8 @@ if (CODE_TOR.url !== CODE.url || CODE_TOR.cert !== CODE.cert || (CODE_TOR.node |
 }
 const codeFor = who => (who === 'tor' ? CODE_TOR : CODE);
 const LIMITS = process.env.LIMITS_FILE || '/srv/bridge-limits/limits.json';
+// Market prices the watcher publishes next to the limits (this server has no internet).
+const PRICES = process.env.PRICES_FILE || path.join(path.dirname(LIMITS), 'prices.json');
 const STATE_DIR = process.env.STATE_DIRECTORY || path.join(__dirname, 'state');
 const REQUOTES = path.join(STATE_DIR, 'requotes.json');
 const LIVE = path.join(STATE_DIR, 'live.json');
@@ -58,6 +60,7 @@ const LABELS = {
   own: process.env.OWN_UNIT || 'sats',                // the units the bridge is paid in
   coin: process.env.OWN_COIN || 'BTC',                // the coin the bridge is paid in
   price: process.env.PRICE_UNIT || 'SHA-256 per coin',
+  shaCoin: process.env.SHA_COIN || 'SHA-256 coin',   // the coin of the chain the bridge pays on
 };
 
 const HOLD_EXPIRY_S = 600;     // what the bridge gives its hold invoices
@@ -450,10 +453,18 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
     if (req.method === 'GET' && u.pathname === '/api/info') {
       const d = await info().catch(() => null);
       const l = limits();
+      // The markets' prices, without the bridge's fee; only while fresh.
+      let prices = null;
+      try {
+        const p = JSON.parse(fs.readFileSync(PRICES, 'utf8'));
+        if (isMsat(p.updated) && Date.now() - p.updated < 10 * 60_000 && p.own_usdt > 0 && p.sha_usdt > 0) {
+          prices = { own_usdt: p.own_usdt, sha_usdt: p.sha_usdt, own_in_sha: p.own_usdt / p.sha_usdt, updated: p.updated };
+        }
+      } catch {}
       return send(res, 200, d ? {
         open: d.open && l.ok, rate: d.rate, spread: d.spread,
-        min_sat: Number(d.min_msat) / 1000, max_sat: Number(d.max_msat) / 1000, labels: LABELS,
-      } : { open: false, labels: LABELS });
+        min_sat: Number(d.min_msat) / 1000, max_sat: Number(d.max_msat) / 1000, labels: LABELS, prices,
+      } : { open: false, labels: LABELS, prices });
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method' });
     const name = u.pathname === '/' ? 'index.html' : u.pathname.slice(1);

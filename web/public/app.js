@@ -5,7 +5,7 @@
       lead: 'Pay a {CHAIN} Lightning invoice with your {COIN}. Your {COIN} payment is held and only collected once the invoice has been paid; otherwise it comes back to you by itself.',
       paste: '{CHAIN} Lightning invoice to pay', pasteBtn: 'Paste', scan: 'Scan QR', check: 'Check price',
       youSend: 'Invoice to pay', youPay: 'You pay about', price: 'Price', fee: 'Fee',
-      estimateNote: 'The final price is set when you press the button: you then have 2 minutes to pay.',
+      estimateNote: 'The final price is set when you press the button: you then have 1 minute to pay.',
       back: 'Back', getInvoice: 'Get the {COIN} invoice',
       payExactly: 'Pay', ownUnit: '{OWN}', expiresIn: 'Price held for', copy: 'Copy invoice', copied: 'Copied ✓', open: 'Open in wallet',
       holdNote: 'Pay it from any {COIN} Lightning wallet. The payment stays on hold until the {CHAIN} invoice is paid.',
@@ -18,7 +18,8 @@
       again: 'Pay another invoice', newPrice: 'Get a new price',
       howTitle: 'How it works',
       how1: 'Paste or scan the {CHAIN} invoice you want paid and check the price.',
-      how2: 'Get a {COIN} invoice with the same payment hash and pay it within 2 minutes.',
+      how2: 'Get a {COIN} invoice with the same payment hash and pay it within 1 minute.',
+      pricesNote: 'Market prices, without the bridge\'s fee. Updated every minute.',
       how3: 'The bridge pays the {CHAIN} invoice and only then collects your {COIN}. If it cannot, your payment comes back by itself.',
       limits: (min, max) => `Invoices from ${min} to ${max} {SHA}. No accounts, nothing stored about you.`,
       footer: 'Non-custodial bridge by {OP}',
@@ -52,7 +53,7 @@
       lead: 'Paga una factura Lightning {CHAIN} con tu {COIN}. Tu pago en {COIN} queda retenido y solo se cobra cuando la factura se ha pagado; si no, vuelve a ti solo.',
       paste: 'Factura Lightning {CHAIN} a pagar', pasteBtn: 'Pegar', scan: 'Escanear QR', check: 'Ver precio',
       youSend: 'Factura a pagar', youPay: 'Pagas unos', price: 'Precio', fee: 'Comisión',
-      estimateNote: 'El precio final se fija al pulsar el botón: desde ese momento tienes 2 minutos para pagar.',
+      estimateNote: 'El precio final se fija al pulsar el botón: desde ese momento tienes 1 minuto para pagar.',
       back: 'Atrás', getInvoice: 'Obtener la factura {COIN}',
       payExactly: 'Paga', ownUnit: '{OWN}', expiresIn: 'Precio garantizado durante', copy: 'Copiar factura', copied: 'Copiada ✓', open: 'Abrir en la wallet',
       holdNote: 'Págala desde cualquier wallet Lightning de {COIN}. El pago queda retenido hasta que se paga la factura {CHAIN}.',
@@ -65,7 +66,8 @@
       again: 'Pagar otra factura', newPrice: 'Pedir precio nuevo',
       howTitle: 'Cómo funciona',
       how1: 'Pega o escanea la factura {CHAIN} que quieres pagar y mira el precio.',
-      how2: 'Obtén una factura {COIN} con el mismo hash de pago y págala en menos de 2 minutos.',
+      how2: 'Obtén una factura {COIN} con el mismo hash de pago y págala en menos de 1 minuto.',
+      pricesNote: 'Precios de mercado, sin la comisión del puente. Se actualizan cada minuto.',
       how3: 'El bridge paga la factura {CHAIN} y solo entonces cobra tus {COIN}. Si no puede, tu pago vuelve solo.',
       limits: (min, max) => `Facturas de ${min} a ${max} {SHA}. Sin cuentas, no se guarda nada sobre ti.`,
       footer: 'Bridge sin custodia de {OP}',
@@ -102,7 +104,7 @@
   try { lang = localStorage.getItem('lang') || ''; } catch {}
   if (!T[lang]) lang = (navigator.language || '').toLowerCase().startsWith('es') ? 'es' : 'en';
   // What this bridge's operator calls things; replaced by /api/info's labels.
-  let L = { op: 'the operator', chain: 'SHA-256', sha: 'sats SHA-256', own: 'sats', coin: 'BTC', price: 'SHA-256 per coin' };
+  let L = { op: 'the operator', chain: 'SHA-256', sha: 'sats SHA-256', own: 'sats', coin: 'BTC', price: 'SHA-256 per coin', shaCoin: 'SHA-256 coin' };
   const fill = (v) => typeof v === 'string'
     ? v.replace(/\{OP\}/g, L.op).replace(/\{CHAIN\}/g, L.chain).replace(/\{SHA\}/g, L.sha)
         .replace(/\{OWN\}/g, L.own).replace(/\{COIN\}/g, L.coin).replace(/\{PRICE\}/g, L.price)
@@ -118,7 +120,28 @@
     document.querySelectorAll('[data-t]').forEach((el) => { const v = t()[el.dataset.t]; if (typeof v === 'string') el.textContent = v; });
     document.querySelectorAll('.lang button').forEach((b) => b.classList.toggle('on', b.dataset.lang === lang));
     if (meta) $('limitsNote').textContent = t().limits(fmt(meta.min_sat), fmt(meta.max_sat));
+    showPrices();
   }
+
+  // The three market prices above the form: the bridge's coin in dollars and in the other
+  // chain's coin, and that coin in dollars.
+  let prices = null;
+  function showPrices() {
+    if (!prices) { $('prices').hidden = true; return; }
+    const loc = lang === 'es' ? 'es-ES' : 'en-US';
+    const usd = (v) => '$' + v.toLocaleString(loc, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    $('pOwnUsdL').textContent = `1 ${L.coin}`;
+    $('pOwnUsd').textContent = usd(prices.own_usdt);
+    $('pOwnShaL').textContent = `1 ${L.coin}`;
+    $('pOwnSha').textContent = `${prices.own_in_sha.toLocaleString(loc, { maximumSignificantDigits: 4 })} ${L.shaCoin}`;
+    $('pShaUsdL').textContent = `1 ${L.shaCoin}`;
+    $('pShaUsd').textContent = usd(prices.sha_usdt);
+    $('prices').hidden = false;
+  }
+  function loadPrices() {
+    api('/api/info').then((d) => { if (d.labels) L = { ...L, ...d.labels }; prices = d.prices || null; showPrices(); });
+  }
+  setInterval(loadPrices, 60_000);
   document.querySelectorAll('.lang button').forEach((b) => b.addEventListener('click', () => {
     lang = b.dataset.lang; try { localStorage.setItem('lang', lang); } catch {}
     applyLang();
@@ -359,6 +382,7 @@
   api('/api/info').then((d) => {
     if (d.labels) L = { ...L, ...d.labels };
     if (!d.error && d.min_sat) meta = d;
+    prices = d.prices || null;
     applyLang();
   });
   applyLang();

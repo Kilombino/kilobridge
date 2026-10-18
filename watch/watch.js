@@ -112,6 +112,8 @@ const SPLICES = env.WATCH_SPLICES !== '0';
 const SPLICE_EVERY = 3; // ticks: once a minute
 // What the web page needs to enforce the caps, without access to the node.
 const LIMITS = env.LIMITS_FILE || '/srv/bridge-limits/limits.json';
+// Market prices for the page (it has no internet of its own), next to the limits.
+const PRICES = env.PRICES_FILE || path.join(path.dirname(LIMITS), 'prices.json');
 
 if (!TOKEN || !CHAT) { console.error('TELEGRAM_TOKEN and TELEGRAM_CHAT are required'); process.exit(1); }
 
@@ -392,13 +394,27 @@ async function splices(st) {
   }
 }
 
+// The two coins' USDT prices, as the markets have them (no fee), for the page to show.
+async function prices() {
+  if (!USDT_OWN) return;
+  const [own, sha] = await Promise.all([lastUsdt(USDT_OWN), USDT_SHA === 'BTC_USDT' ? majorBtcUsdt() : lastUsdt(USDT_SHA)]);
+  const p = { updated: Date.now(), own_usdt: own, sha_usdt: sha };
+  fs.writeFileSync(PRICES + '.tmp', JSON.stringify(p), { mode: 0o644 });
+  fs.chmodSync(PRICES + '.tmp', 0o644);
+  fs.renameSync(PRICES + '.tmp', PRICES);
+}
+
 (async () => {
   const st = load() || {};
   if (process.argv[2] === '--test') { await tell(M.test); return; }
   let n = 0;
   for (;;) {
     try { await tick(st); save(st); } catch (e) { console.error(new Date().toISOString(), e.message); }
-    if (SPLICES && n++ % SPLICE_EVERY === 0) {
+    const once = n++ % SPLICE_EVERY === 0; // once a minute
+    if (once) {
+      try { await prices(); } catch (e) { console.error(new Date().toISOString(), 'prices:', e.message); }
+    }
+    if (SPLICES && once) {
       try { await splices(st); save(st); } catch (e) { console.error(new Date().toISOString(), 'splices:', e.message); }
     }
     await new Promise(r => setTimeout(r, EVERY_MS));

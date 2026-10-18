@@ -20,6 +20,13 @@
   </header>
   <p class="lead" data-t="lead"></p>
 
+  <section id="prices" class="prices" hidden>
+    <div class="pcard"><span class="plabel" id="pOwnUsdL"></span><strong id="pOwnUsd"></strong></div>
+    <div class="pcard"><span class="plabel" id="pOwnShaL"></span><strong id="pOwnSha"></strong></div>
+    <div class="pcard"><span class="plabel" id="pShaUsdL"></span><strong id="pShaUsd"></strong></div>
+    <p class="pnote" data-t="pricesNote"></p>
+  </section>
+
   <section id="step1" class="card">
     <label for="invoice" data-t="paste"></label>
     <textarea id="invoice" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="lnbc…"></textarea>
@@ -48,7 +55,7 @@
 
   <section id="step3" class="card" hidden>
     <p class="big"><span data-t="payExactly"></span> <strong id="paySat"></strong> <span data-t="ownUnit"></span></p>
-    <p class="timer"><span data-t="expiresIn"></span> <strong id="countdown">2:00</strong></p>
+    <p class="timer"><span data-t="expiresIn"></span> <strong id="countdown">1:00</strong></p>
     <a id="qrLink" class="qr" href="#"><img id="qr" alt="QR"></a>
     <div class="row">
       <button id="copyBtn" class="btn ghost" data-t="copy"></button>
