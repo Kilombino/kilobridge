@@ -191,6 +191,24 @@ async function lastUsdt(ticker) {
   return p;
 }
 
+// The SHA-256 coin's price from the big markets (the median of three), since NonKYC's BTC_USDT
+// book is thin and can sit a few hundred USDT off; NonKYC only if none of them answers.
+async function majorBtcUsdt() {
+  const get = async (url, pick) => {
+    const r = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+    const p = Number(pick(await r.json()));
+    if (!(p > 0)) throw new Error('no price');
+    return p;
+  };
+  const got = (await Promise.allSettled([
+    get('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', j => j.price),
+    get('https://api.kraken.com/0/public/Ticker?pair=XBTUSDT', j => Object.values(j.result)[0].c[0]),
+    get('https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT', j => j.data[0].last),
+  ])).filter(x => x.status === 'fulfilled').map(x => x.value).sort((a, b) => a - b);
+  if (!got.length) return lastUsdt(USDT_SHA);
+  return got.length % 2 ? got[(got.length - 1) / 2] : (got[got.length / 2 - 1] + got[got.length / 2]) / 2;
+}
+
 const usdt = v => v.toLocaleString(LANG === 'es' ? 'es-ES' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' USDT';
 
 // The USDT prices of both coins when the swap is told, and what one coin cost the payer here:
@@ -198,7 +216,7 @@ const usdt = v => v.toLocaleString(LANG === 'es' ? 'es-ES' : 'en-US', { minimumF
 async function usdtLine(r) {
   if (!USDT_OWN || r.state !== 'settled') return null;
   try {
-    const [own, sha] = await Promise.all([lastUsdt(USDT_OWN), lastUsdt(USDT_SHA)]);
+    const [own, sha] = await Promise.all([lastUsdt(USDT_OWN), USDT_SHA === 'BTC_USDT' ? majorBtcUsdt() : lastUsdt(USDT_SHA)]);
     const got = Number(r.outgoing_msat) * sha / Number(r.incoming_msat);
     return M.usdt(usdt(got), usdt(own), usdt(sha));
   } catch { return null; }
