@@ -80,3 +80,15 @@ footer a { color: inherit; }
 .pcard strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .pnote { grid-column: 1 / -1; color: var(--muted); font-size: .78rem; margin: 0; }
 @media (max-width: 420px) { .prices { grid-template-columns: 1fr; } }
+
+.tabs { display: flex; gap: 6px; margin: 16px 0 0; border-bottom: 1px solid var(--line); }
+.tabs[hidden] { display: none; }
+.tab { padding: 9px 14px; color: var(--muted); text-decoration: none; font-weight: 700; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab:hover { color: var(--text); }
+.tab.on { color: var(--text); border-bottom-color: var(--gold); }
+.field { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--code); color: var(--text); font: inherit; }
+.field:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--glow); }
+.mono { font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+.mt { margin-top: 14px; }
+.stepT { font-weight: 700; margin: 0; }
+.copy.btn.wide { margin-top: 8px; min-height: 40px; padding: 8px 14px; }

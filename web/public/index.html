@@ -18,6 +18,11 @@
       <div class="lang"><button class="chip" data-lang="es">ES</button><button class="chip" data-lang="en">EN</button></div>
     </div>
   </header>
+  <nav id="tabs" class="tabs" hidden>
+    <a href="#" id="tabBridgeBtn" class="tab on">Kilobridge</a>
+    <a href="#lsp" id="tabLspBtn" class="tab"></a>
+  </nav>
+  <div id="tabBridge">
   <p class="lead" data-t="lead"></p>
 
   <section id="prices" class="prices" hidden>
@@ -96,6 +101,68 @@
     </ul>
     <a class="btn ghost wide" href="https://github.com/Kilombino/kilobridge#run-your-own-bridge" rel="noreferrer" data-t="ownBtn"></a>
   </section>
+  </div>
+
+  <div id="tabLsp" hidden>
+    <p class="lead" id="lspLead"></p>
+    <section class="prices lspfacts">
+      <div class="pcard"><span class="plabel" id="lspFeeL"></span><strong id="lspFee"></strong></div>
+      <div class="pcard"><span class="plabel" id="lspAvailL"></span><strong id="lspAvail"></strong></div>
+      <div class="pcard"><span class="plabel" id="lspDaysL"></span><strong id="lspDays"></strong></div>
+    </section>
+
+    <section id="lsp1" class="card">
+      <label for="lspPubkey" id="lspPubkeyL"></label>
+      <input id="lspPubkey" class="field mono" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="02… / 03…">
+      <label for="lspSize" id="lspSizeL" class="mt"></label>
+      <select id="lspSize" class="field"></select>
+      <dl class="sum mt"><dt id="lspPayL"></dt><dd id="lspPay" class="hi"></dd></dl>
+      <button id="lspPrepBtn" class="btn primary wide"></button>
+      <p id="lspErr1" class="err" hidden></p>
+    </section>
+
+    <section id="lsp2" class="card" hidden>
+      <p class="stepT" id="lspConnT"></p>
+      <code id="lspConn"></code>
+      <button class="btn ghost wide copy" data-copy="lspConn"></button>
+      <p class="stepT mt" id="lspSignT"></p>
+      <code id="lspSign"></code>
+      <button class="btn ghost wide copy" data-copy="lspSign"></button>
+      <p class="note" id="lspSignNote"></p>
+      <p class="timer"><span id="lspSignLeftL"></span> <strong id="lspSignLeft">5:00</strong></p>
+      <label for="lspSig" id="lspSigL" class="mt"></label>
+      <textarea id="lspSig" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      <div class="row">
+        <button id="lspBack" class="btn ghost"></button>
+        <button id="lspAskBtn" class="btn primary"></button>
+      </div>
+      <p id="lspErr2" class="err" hidden></p>
+    </section>
+
+    <section id="lsp3" class="card" hidden>
+      <p class="big"><span id="lspPayNowL"></span> <strong id="lspPayNow"></strong></p>
+      <p class="timer"><span id="lspInvLeftL"></span> <strong id="lspInvLeft">10:00</strong></p>
+      <a id="lspQrLink" class="qr" href="#"><img id="lspQr" alt="QR"></a>
+      <div class="row">
+        <button id="lspCopyInv" class="btn ghost"></button>
+        <a id="lspOpenInv" class="btn primary" href="#"></a>
+      </div>
+      <p class="status" id="lspStatus"></p>
+      <p class="note" id="lspHoldNote"></p>
+    </section>
+
+    <section id="lsp4" class="card" hidden>
+      <p class="big" id="lspDoneT"></p>
+      <p id="lspDoneText"></p>
+      <button id="lspAgain" class="btn primary wide"></button>
+    </section>
+
+    <section class="how">
+      <h2 id="lspHowT"></h2>
+      <ol><li id="lspHow1"></li><li id="lspHow2"></li><li id="lspHow3"></li><li id="lspHow4"></li></ol>
+      <p class="note" id="lspRules"></p>
+    </section>
+  </div>
   <footer><span data-t="footer"></span> · <a href="https://github.com/paulscode/lightning-fork" rel="noreferrer">Lightning Fork</a></footer>
 </main>
 
@@ -111,5 +178,6 @@
 <script src="qrcode.js"></script>
 <script src="jsqr.js"></script>
 <script src="app.js"></script>
+<script src="lsp.js"></script>
 </body>
 </html>

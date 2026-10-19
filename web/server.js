@@ -430,6 +430,67 @@ async function apiSwap(hash, token, who) {
   }];
 }
 
+// --- Inbound channels (optional) -------------------------------------------
+// When LSP_URL points at a kilo-lsp server (the operator's inbound channel service), the page
+// gets a second tab to buy a channel from the operator's node. This server only relays three
+// calls to it, adds its own rate limit, and checks that the fee invoice is the LSP node's and
+// for the quoted fee before showing it.
+
+const LSP_URL = (process.env.LSP_URL || '').replace(/\/+$/, '');
+const LSP_NAME = process.env.LSP_NAME || `${LABELS.op} LSP`;
+let lspNode = null;
+
+function lsp(method, p, body, who) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(LSP_URL + p);
+    const data = body ? JSON.stringify(body) : null;
+    const r = http.request({
+      host: u.hostname, port: u.port, path: u.pathname, method, timeout: 30_000,
+      headers: { 'content-type': 'application/json', 'cf-connecting-ip': who, ...(data ? { 'content-length': Buffer.byteLength(data) } : {}) },
+    }, (res) => {
+      let buf = '';
+      res.on('data', (c) => { buf += c; if (buf.length > 65536) r.destroy(new Error('too big')); });
+      res.on('end', () => { try { resolve([res.statusCode, JSON.parse(buf)]); } catch { reject(new Error('lsp_bad_reply')); } });
+    });
+    r.on('timeout', () => r.destroy(new Error('lsp_timeout')));
+    r.on('error', reject);
+    if (data) r.write(data);
+    r.end();
+  });
+}
+
+async function apiLsp(req, u, who) {
+  if (req.method === 'GET' && u.pathname === '/api/lsp/info') {
+    const [st, d] = await lsp('GET', '/v1/info', null, who);
+    if (st !== 200 || !/^0[23][0-9a-f]{64}$/.test(d.pubkey || '')) return [503, { error: 'unavailable' }];
+    lspNode = d.pubkey;
+    return [200, { name: LSP_NAME, pubkey: d.pubkey, uris: (d.uris || []).slice(0, 6), minSats: d.minSats, maxSats: d.maxSats,
+      stepSats: d.stepSats, feePerMillion: d.feePerMillion, availableSats: d.availableSats, minDays: d.minDays,
+      private: d.private, quoteSeconds: d.quoteSeconds }];
+  }
+  if (req.method === 'POST' && u.pathname === '/api/lsp/quote') {
+    if (!allow('lspq:' + who, who === 'tor' ? 30 : 10, 10 * 60_000)) return [429, { error: 'limit' }];
+    if (!String(req.headers['content-type'] || '').startsWith('application/json')) return [415, { error: 'invalid_request' }];
+    const b = await readBody(req).catch(() => null);
+    if (!b) return [400, { error: 'invalid_request' }];
+    const body = { pubkey: String(b.pubkey || '').trim().toLowerCase(), sats: Number(b.sats), ts: Number(b.ts), signature: String(b.signature || '').trim() };
+    const [st, d] = await lsp('POST', '/v1/quote', body, who);
+    if (st !== 200) return [st === 429 ? 429 : st === 503 ? 503 : 400, { error: 'lsp', message: String(d.error || '').slice(0, 300) }];
+    let inv;
+    try { inv = decode(d.invoice); } catch { return [502, { error: 'bad_hold' }]; }
+    if (!lspNode || inv.payee !== lspNode || inv.msat !== BigInt(d.fee) * 1000n) return [502, { error: 'bad_hold' }];
+    return [200, { id: d.id, invoice: d.invoice, fee: d.fee, sats: d.sats, expires: d.expires, minDays: d.minDays }];
+  }
+  const m = /^\/api\/lsp\/order\/([0-9a-f]{16})$/.exec(u.pathname);
+  if (req.method === 'GET' && m) {
+    if (!allow('lspo:' + who, who === 'tor' ? 240 : 60, 60_000)) return [429, { error: 'limit' }];
+    const [st, d] = await lsp('GET', `/v1/order/${m[1]}`, null, who);
+    if (st !== 200) return [404, { error: 'not_found' }];
+    return [200, { status: d.status, sats: d.sats, fee: d.fee, expires: d.expires, fundingTxid: d.fundingTxid, reason: d.reason, minUntil: d.minUntil }];
+  }
+  return [404, { error: 'not_found' }];
+}
+
 // --- HTTP -------------------------------------------------------------------
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -474,6 +535,11 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
     }
     if (req.method === 'GET' && u.pathname.startsWith('/api/swap/')) {
       const [st, obj] = await apiSwap(u.pathname.slice(10), u.searchParams.get('t'), who);
+      return send(res, st, obj);
+    }
+    if (u.pathname.startsWith('/api/lsp/')) {
+      if (!LSP_URL) return send(res, 404, { error: 'not_found' });
+      const [st, obj] = await apiLsp(req, u, who).catch(() => [503, { error: 'unavailable' }]);
       return send(res, st, obj);
     }
     if (req.method === 'GET' && u.pathname === '/api/pow') {
