@@ -81,7 +81,7 @@ footer a { color: inherit; }
 .pnote { grid-column: 1 / -1; color: var(--muted); font-size: .78rem; margin: 0; }
 @media (max-width: 420px) { .prices { grid-template-columns: 1fr; } }
 
-.tabs { display: flex; gap: 6px; margin: 16px 0 0; border-bottom: 1px solid var(--line); }
+.tabs { display: flex; gap: 18px; margin: 16px 0 0; border-bottom: 1px solid var(--line); }
 .tabs[hidden] { display: none; }
 .tab { padding: 9px 14px; color: var(--muted); text-decoration: none; font-weight: 700; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tab:hover { color: var(--text); }

@@ -7,13 +7,11 @@
     en: {
       lead: (n) => `Get inbound liquidity: ${n} opens a channel from its node to yours so you can receive. You pay a fee per million, held until the channel's funding transaction is out; if it can't open, the payment comes back by itself.`,
       feeL: 'Fee', fee: (f) => `${f} {OWN} per million`, availL: 'Available now', availNone: 'none right now', daysL: 'Kept open at least', days: (d) => `${d} days`,
-      pubkeyL: 'Your node’s public key', sizeL: 'Channel size', million: (m) => `${m} million {OWN}`, payL: 'You pay',
-      prep: 'Next', connT: '1. Connect your node to ours (if it isn’t yet):', signT: '2. Sign this request with your node:',
-      copy: 'Copy', copied: 'Copied ✓',
-      signNote: 'With LND, the command above. With Core Lightning: lightning-cli signmessage "<the same text>" and use its "zbase" value. The request only works for your node, this size and the next 5 minutes.',
-      signLeftL: 'Valid for', sigL: 'Paste the signature it printed', back: 'Back', ask: 'Request the channel',
+      pubkeyL: 'Your node (pubkey@host:port)', sizeL: 'Channel size', million: (m) => `${m} million {OWN}`, payL: 'You pay',
+      prep: 'Request the channel',
+      copied: 'Copied ✓',
       payNowL: 'Pay', invLeftL: 'Invoice valid for', copyInv: 'Copy invoice', openInv: 'Open in wallet',
-      holdNote: 'Pay it from any {COIN} Lightning wallet. The payment is held: it is only collected once the channel is opening, otherwise it goes back to you.',
+      holdNote: 'Pay it from any {COIN} Lightning wallet. Your node is already connected and the channel was checked; the payment is held and only collected once the channel is opening, otherwise it goes back to you.',
       st: { waiting_payment: 'Waiting for your payment…', paid: 'Payment received: opening the channel…', opening: 'The channel is opening: waiting for confirmations.' },
       openT: 'Channel opening ✓', openText: (s, tx) => `A channel of ${s} {OWN} to your node is on its way. Funding transaction: ${tx}`,
       activeT: 'Channel open ✓', activeText: (s) => `Your node now has a channel of ${s} {OWN} from ours, ready to receive.`,
@@ -21,30 +19,31 @@
       expiredT: 'Expired', expiredText: 'The invoice was not paid in time. Nothing was charged.',
       again: 'Request another channel',
       howT: 'How it works',
-      how1: 'Enter your node’s public key and the size you want.',
-      how2: 'Connect your node to ours and sign the request with it: that proves the node is yours.',
-      how3: 'Pay the fee invoice. It stays on hold.',
+      how1: 'Enter your node as pubkey@host:port (an .onion address works) and the size you want.',
+      how2: 'Our node connects to yours and checks it can open the channel: liquidity, limits and that your node answers.',
+      how3: 'Pay the fee invoice. It stays on hold, not collected yet.',
       how4: 'The channel opens from our node to yours and only then is the fee collected. If it can’t open, the payment comes back.',
       rules: (min, max, d, priv) => `Channels from ${min} to ${max} million, in whole millions; one request per node at a time. ${priv ? 'Private channel (not announced): your node receives through route hints in its invoices. ' : ''}Opened with confirmed coins only; kept at least ${d} days.`,
       e: {
-        pubkey: 'That doesn’t look like a node public key (66 hex characters, starting with 02 or 03).',
-        sig: 'Paste the signature your node printed.',
-        expiredSig: 'The 5 minutes to sign have passed. Go back and prepare it again.',
+        pubkey: 'Write it as pubkey@host:port: the public key (66 hex characters, 02… or 03…), @, and the address your node listens on.',
         limit: 'Too many requests. Wait a few minutes and try again.', unavailable: 'The service is not available right now. Try again later.',
         network: 'Can’t reach the server. Check your connection.', bad_hold: 'The fee invoice didn’t check out, so it isn’t shown. Try again.',
       },
-      lsp: [],
+      lsp: [
+        ['could not connect to your node', 'Our node could not connect to yours at that address. Check that it is online and reachable there (an .onion address works if your node uses Tor).'],
+        ['that address is not a public one', 'That address is a private one: give the public address or the .onion of your node.'],
+        ['that address does not resolve', 'That address does not resolve.'],
+        ['you already have a request waiting', 'You already have a request waiting for payment: pay it or wait 5 minutes for it to expire.'],
+      ],
     },
     es: {
       lead: (n) => `Consigue liquidez de entrada: ${n} abre un canal desde su nodo hasta el tuyo para que puedas recibir. Pagas una comisión por millón, retenida hasta que sale la transacción de apertura; si no se puede abrir, el pago vuelve solo.`,
       feeL: 'Comisión', fee: (f) => `${f} {OWN} por millón`, availL: 'Disponible ahora', availNone: 'nada ahora mismo', daysL: 'Abierto como mínimo', days: (d) => `${d} días`,
-      pubkeyL: 'Clave pública de tu nodo', sizeL: 'Tamaño del canal', million: (m) => `${m} ${m === 1 ? 'millón' : 'millones'} de {OWN}`, payL: 'Pagas',
-      prep: 'Siguiente', connT: '1. Conecta tu nodo al nuestro (si aún no lo está):', signT: '2. Firma esta petición con tu nodo:',
-      copy: 'Copiar', copied: 'Copiado ✓',
-      signNote: 'Con LND, el comando de arriba. Con Core Lightning: lightning-cli signmessage "<el mismo texto>" y usa su valor "zbase". La petición solo vale para tu nodo, este tamaño y los próximos 5 minutos.',
-      signLeftL: 'Válida durante', sigL: 'Pega la firma que ha devuelto', back: 'Atrás', ask: 'Pedir el canal',
+      pubkeyL: 'Tu nodo (pubkey@host:puerto)', sizeL: 'Tamaño del canal', million: (m) => `${m} ${m === 1 ? 'millón' : 'millones'} de {OWN}`, payL: 'Pagas',
+      prep: 'Pedir el canal',
+      copied: 'Copiado ✓',
       payNowL: 'Paga', invLeftL: 'Factura válida durante', copyInv: 'Copiar factura', openInv: 'Abrir en la wallet',
-      holdNote: 'Págala desde cualquier wallet Lightning de {COIN}. El pago queda retenido: solo se cobra cuando el canal se está abriendo; si no, vuelve a ti.',
+      holdNote: 'Págala desde cualquier wallet Lightning de {COIN}. Tu nodo ya está conectado y el canal comprobado; el pago queda retenido y solo se cobra cuando el canal se está abriendo; si no, vuelve a ti.',
       st: { waiting_payment: 'Esperando tu pago…', paid: 'Pago recibido: abriendo el canal…', opening: 'El canal se está abriendo: esperando confirmaciones.' },
       openT: 'Canal en camino ✓', openText: (s, tx) => `Un canal de ${s} {OWN} hacia tu nodo se está abriendo. Transacción de apertura: ${tx}`,
       activeT: 'Canal abierto ✓', activeText: (s) => `Tu nodo ya tiene un canal de ${s} {OWN} desde el nuestro, listo para recibir.`,
@@ -52,15 +51,13 @@
       expiredT: 'Caducada', expiredText: 'La factura no se pagó a tiempo. No se ha cobrado nada.',
       again: 'Pedir otro canal',
       howT: 'Cómo funciona',
-      how1: 'Pon la clave pública de tu nodo y el tamaño que quieres.',
-      how2: 'Conecta tu nodo al nuestro y firma la petición con él: así se demuestra que el nodo es tuyo.',
-      how3: 'Paga la factura de la comisión. Queda retenida.',
+      how1: 'Pon tu nodo como pubkey@host:puerto (vale una dirección .onion) y el tamaño que quieres.',
+      how2: 'Nuestro nodo se conecta al tuyo y comprueba que puede abrir el canal: liquidez, límites y que tu nodo responde.',
+      how3: 'Paga la factura de la comisión. Queda retenida, todavía sin cobrar.',
       how4: 'El canal se abre desde nuestro nodo hasta el tuyo y solo entonces se cobra la comisión. Si no se puede abrir, el pago vuelve.',
       rules: (min, max, d, priv) => `Canales de ${min} a ${max} millones, en millones enteros; una petición por nodo a la vez. ${priv ? 'Canal privado (sin anunciar): tu nodo recibe mediante pistas de ruta en sus facturas. ' : ''}Se abre solo con monedas confirmadas y se mantiene al menos ${d} días.`,
       e: {
-        pubkey: 'Eso no parece la clave pública de un nodo (66 caracteres hexadecimales que empiezan por 02 o 03).',
-        sig: 'Pega la firma que ha devuelto tu nodo.',
-        expiredSig: 'Han pasado los 5 minutos para firmar. Vuelve atrás y prepárala otra vez.',
+        pubkey: 'Escríbelo como pubkey@host:puerto: la clave pública (66 caracteres hexadecimales, 02… o 03…), @, y la dirección donde escucha tu nodo.',
         limit: 'Demasiadas peticiones. Espera unos minutos y vuelve a probar.', unavailable: 'El servicio no está disponible ahora. Prueba más tarde.',
         network: 'No se puede contactar con el servidor. Revisa tu conexión.', bad_hold: 'La factura de la comisión no cuadraba y no se muestra. Prueba otra vez.',
       },
@@ -76,6 +73,10 @@
         ['not enough confirmed liquidity', 'Ahora no hay liquidez confirmada suficiente: prueba un canal más pequeño o después del próximo bloque.'],
         ['sats must be whole millions', 'El tamaño tiene que ser de millones enteros.'],
         ['your node went offline', 'Tu nodo se desconectó antes de abrir el canal.'],
+        ['could not connect to your node', 'Nuestro nodo no ha podido conectarse al tuyo en esa dirección. Comprueba que está encendido y accesible ahí (si tu nodo usa Tor, vale la .onion).'],
+        ['that address is not a public one', 'Esa dirección es privada: pon la dirección pública o la .onion de tu nodo.'],
+        ['that address does not resolve', 'Esa dirección no existe.'],
+        ['you already have a request waiting', 'Ya tienes una petición esperando el pago: págala o espera 5 minutos a que caduque.'],
       ],
     },
   };
@@ -91,7 +92,7 @@
   };
   const fmt = (n) => new Intl.NumberFormat(document.documentElement.lang === 'es' ? 'es-ES' : 'en-US', { useGrouping: 'always' }).format(n);
 
-  let info = null, req = null, order = null, signTimer = null, invTimer = null, poll = null;
+  let info = null, order = null, invTimer = null, poll = null;
 
   async function api(path, body) {
     try {
@@ -107,7 +108,7 @@
     return t().e[d.error] || t().e.unavailable;
   }
   function showErr(id, msg) { $(id).textContent = msg; $(id).hidden = !msg; }
-  function step(n) { ['lsp1', 'lsp2', 'lsp3', 'lsp4'].forEach((s) => { $(s).hidden = s !== n; }); }
+  function step(n) { ['lsp1', 'lsp3', 'lsp4'].forEach((s) => { $(s).hidden = s !== n; }); }
   const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   function render() {
@@ -127,10 +128,6 @@
     if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
     updatePay();
     $('lspPrepBtn').textContent = x.prep; $('lspPrepBtn').disabled = info.availableSats < info.minSats;
-    $('lspConnT').textContent = x.connT; $('lspSignT').textContent = x.signT;
-    document.querySelectorAll('#tabLsp .copy').forEach((b) => { b.textContent = x.copy; });
-    $('lspSignNote').textContent = x.signNote; $('lspSignLeftL').textContent = x.signLeftL; $('lspSigL').textContent = x.sigL;
-    $('lspBack').textContent = x.back; $('lspAskBtn').textContent = x.ask;
     $('lspPayNowL').textContent = x.payNowL; $('lspInvLeftL').textContent = x.invLeftL;
     $('lspCopyInv').textContent = x.copyInv; $('lspOpenInv').textContent = x.openInv; $('lspHoldNote').textContent = x.holdNote;
     $('lspAgain').textContent = x.again;
@@ -155,47 +152,15 @@
   $('tabBridgeBtn').addEventListener('click', (ev) => { ev.preventDefault(); history.pushState(null, '', location.pathname); route(); });
   document.querySelectorAll('.lang button').forEach((b) => b.addEventListener('click', () => setTimeout(render, 0)));
 
-  $('lspPrepBtn').addEventListener('click', () => {
+  $('lspPrepBtn').addEventListener('click', async () => {
     showErr('lspErr1', '');
-    const pubkey = $('lspPubkey').value.trim().toLowerCase();
-    if (!/^0[23][0-9a-f]{64}$/.test(pubkey)) return showErr('lspErr1', t().e.pubkey);
+    const m = /^\s*(0[23][0-9a-fA-F]{64})@(\S+:\d{1,5})\s*$/.exec($('lspPubkey').value);
+    if (!m) return showErr('lspErr1', t().e.pubkey);
     const sats = Number($('lspSize').value);
-    const ts = Math.floor(Date.now() / 1000);
-    req = { pubkey, sats, ts };
-    // The onion address first: it works from any node, without opening ports.
-    const uri = [...info.uris].sort((a, b) => (b.includes('.onion') ? 1 : 0) - (a.includes('.onion') ? 1 : 0))[0] || info.pubkey;
-    $('lspConn').textContent = `lncli connect ${uri}`;
-    $('lspSign').textContent = `lncli signmessage "kilowallet-lsp:v1:${pubkey}:${sats}:${ts}"`;
-    $('lspSig').value = '';
-    showErr('lspErr2', '');
-    step('lsp2');
-    clearInterval(signTimer);
-    const tick = () => {
-      const left = Math.max(0, ts + 300 - 15 - Math.floor(Date.now() / 1000));
-      $('lspSignLeft').textContent = clock(left);
-      $('lspSignLeft').parentElement.classList.toggle('low', left < 60);
-      if (!left) clearInterval(signTimer);
-    };
-    tick(); signTimer = setInterval(tick, 1000);
-  });
-  document.querySelectorAll('#tabLsp .copy').forEach((b) => b.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText($(b.dataset.copy).textContent); b.textContent = t().copied; setTimeout(() => { b.textContent = t().copy; }, 2000); } catch {}
-  }));
-  $('lspBack').addEventListener('click', () => { clearInterval(signTimer); step('lsp1'); });
-
-  $('lspAskBtn').addEventListener('click', async () => {
-    showErr('lspErr2', '');
-    let sig = $('lspSig').value.trim();
-    // Pasting the whole output of lncli works too.
-    const m = /"signature"\s*:\s*"([^"]+)"/.exec(sig) || /"zbase"\s*:\s*"([^"]+)"/.exec(sig);
-    if (m) sig = m[1];
-    if (sig.length < 20) return showErr('lspErr2', t().e.sig);
-    if (Date.now() / 1000 > req.ts + 300 - 15) return showErr('lspErr2', t().e.expiredSig);
-    $('lspAskBtn').disabled = true;
-    const d = await api('/api/lsp/quote', { ...req, signature: sig });
-    $('lspAskBtn').disabled = false;
-    if (d.error) return showErr('lspErr2', errText(d));
-    clearInterval(signTimer);
+    $('lspPrepBtn').disabled = true;
+    const d = await api('/api/lsp/quote', { pubkey: m[1].toLowerCase(), host: m[2], sats });
+    $('lspPrepBtn').disabled = false;
+    if (d.error) return showErr('lspErr1', errText(d));
     order = { id: d.id, status: 'waiting_payment', sats: d.sats, fee: d.fee, expires: d.expires };
     $('lspPayNow').textContent = `${fmt(d.fee)} ${L.own}`;
     const qr = qrcode(0, 'L');

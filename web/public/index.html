@@ -7,7 +7,7 @@
 <meta name="description" content="Pay a Lightning invoice on another chain with your coins. Non-custodial: your payment is only collected once the invoice is paid.">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="favicon.png" type="image/png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 <main>
@@ -113,30 +113,12 @@
 
     <section id="lsp1" class="card">
       <label for="lspPubkey" id="lspPubkeyL"></label>
-      <input id="lspPubkey" class="field mono" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="02… / 03…">
+      <input id="lspPubkey" class="field mono" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="02…@host:9735">
       <label for="lspSize" id="lspSizeL" class="mt"></label>
       <select id="lspSize" class="field"></select>
       <dl class="sum mt"><dt id="lspPayL"></dt><dd id="lspPay" class="hi"></dd></dl>
       <button id="lspPrepBtn" class="btn primary wide"></button>
       <p id="lspErr1" class="err" hidden></p>
-    </section>
-
-    <section id="lsp2" class="card" hidden>
-      <p class="stepT" id="lspConnT"></p>
-      <code id="lspConn"></code>
-      <button class="btn ghost wide copy" data-copy="lspConn"></button>
-      <p class="stepT mt" id="lspSignT"></p>
-      <code id="lspSign"></code>
-      <button class="btn ghost wide copy" data-copy="lspSign"></button>
-      <p class="note" id="lspSignNote"></p>
-      <p class="timer"><span id="lspSignLeftL"></span> <strong id="lspSignLeft">5:00</strong></p>
-      <label for="lspSig" id="lspSigL" class="mt"></label>
-      <textarea id="lspSig" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
-      <div class="row">
-        <button id="lspBack" class="btn ghost"></button>
-        <button id="lspAskBtn" class="btn primary"></button>
-      </div>
-      <p id="lspErr2" class="err" hidden></p>
     </section>
 
     <section id="lsp3" class="card" hidden>
@@ -177,7 +159,7 @@
 <canvas id="canvas" hidden></canvas>
 <script src="qrcode.js"></script>
 <script src="jsqr.js"></script>
-<script src="app.js"></script>
-<script src="lsp.js"></script>
+<script src="app.js?v=3"></script>
+<script src="lsp.js?v=3"></script>
 </body>
 </html>

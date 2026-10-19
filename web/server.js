@@ -473,7 +473,8 @@ async function apiLsp(req, u, who) {
     if (!String(req.headers['content-type'] || '').startsWith('application/json')) return [415, { error: 'invalid_request' }];
     const b = await readBody(req).catch(() => null);
     if (!b) return [400, { error: 'invalid_request' }];
-    const body = { pubkey: String(b.pubkey || '').trim().toLowerCase(), sats: Number(b.sats), ts: Number(b.ts), signature: String(b.signature || '').trim() };
+    // The page sends the node as pubkey@host:port and no signature: the LSP connects to it.
+    const body = { pubkey: String(b.pubkey || '').trim().toLowerCase(), sats: Number(b.sats), host: String(b.host || '').trim().slice(0, 120) };
     const [st, d] = await lsp('POST', '/v1/quote', body, who);
     if (st !== 200) return [st === 429 ? 429 : st === 503 ? 503 : 400, { error: 'lsp', message: String(d.error || '').slice(0, 300) }];
     let inv;
