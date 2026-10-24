@@ -91,9 +91,10 @@ const M = {
     test: '🧪 Bridge watcher test: from now on you hear about every swap here.', off: 'disabled',
     you: 'you', peer: 'the peer',
     spStart: (a, who, l, r, cap, fee, our) => ['🔀 Channel resize started', `Channel with ${a}, started by ${who}.`,
-      `Your balance ${l}, the peer's ${r} ${OWN}. New capacity: ${cap} ${OWN}.`, `Fee: ${fee} ${OWN} (${our} yours).`],
+      `Change to your balance ${l}, to the peer's ${r} ${OWN}. New capacity: ${cap} ${OWN}.`, `Fee: ${fee} ${OWN} (${our} yours).`],
     spOnChain: (a, n) => `⛓️ The resize of the channel with ${a} is on chain; it counts after ${n} confirmations.`,
-    spLocked: (a, l, r) => ['✅ Channel resized', `Channel with ${a}: your balance ${l}, the peer's ${r} ${OWN}.`],
+    spLocked: (a, l, r, nl, nr, cap) => ['✅ Channel resized', `Channel with ${a}: your balance changed ${l}, the peer's ${r} ${OWN}.`,
+      `Now: yours ${nl}, the peer's ${nr} ${OWN}; capacity ${cap} ${OWN}.`],
     spEnded: (a, how, why) => ['⚠️ Channel resize did not go through', `Channel with ${a}: ${how}${why ? ` (${why})` : ''}. The channel keeps working at its old size.`],
     spHow: { aborted: 'called off', dead: 'one of its coins was spent elsewhere' }, spPeerSaid: 'the peer says',
     spRejected: (a, why) => `🟠 The resize transaction of the channel with ${a} was rejected by the node: ${why}. Look at it: lncli listchannels`,
@@ -127,9 +128,10 @@ const M = {
     test: '🧪 Prueba del vigilante del bridge: a partir de ahora te aviso aquí de cada cambio.', off: 'desactivado',
     you: 'ti', peer: 'el otro nodo',
     spStart: (a, who, l, r, cap, fee, our) => ['🔀 Redimensionado de canal empezado', `Canal con ${a}, empezado por ${who}.`,
-      `Tu saldo ${l}, el del otro ${r} ${OWN}. Capacidad nueva: ${cap} ${OWN}.`, `Comisión: ${fee} ${OWN} (${our} tuyos).`],
+      `Cambio en tu saldo ${l}, en el del otro ${r} ${OWN}. Capacidad nueva: ${cap} ${OWN}.`, `Comisión: ${fee} ${OWN} (${our} tuyos).`],
     spOnChain: (a, n) => `⛓️ El redimensionado del canal con ${a} ya está en cadena; cuenta a las ${n} confirmaciones.`,
-    spLocked: (a, l, r) => ['✅ Canal redimensionado', `Canal con ${a}: tu saldo ${l}, el del otro ${r} ${OWN}.`],
+    spLocked: (a, l, r, nl, nr, cap) => ['✅ Canal redimensionado', `Canal con ${a}: tu saldo cambia ${l}, el del otro ${r} ${OWN}.`,
+      `Ahora: tu saldo ${nl}, el del otro ${nr} ${OWN}; capacidad ${cap} ${OWN}.`],
     spEnded: (a, how, why) => ['⚠️ El redimensionado del canal no ha salido', `Canal con ${a}: ${how}${why ? ` (${why})` : ''}. El canal sigue funcionando con su tamaño de antes.`],
     spHow: { aborted: 'se ha cancelado', dead: 'una de sus monedas se gastó en otra transacción' }, spPeerSaid: 'el otro nodo dice',
     spRejected: (a, why) => `🟠 El nodo ha rechazado la transacción del redimensionado del canal con ${a}: ${why}. Míralo: lncli listchannels`,
@@ -472,7 +474,7 @@ async function splices(st) {
     if (last && last.time && String(last.time) !== k.lastTime) {
       if (!first) {
         if (last.outcome === 'locked') {
-          await tell([...M.spLocked(who, signed(last.local_delta_sat), signed(last.remote_delta_sat)), last.txid ? `Tx: ${last.txid}` : ''].filter(Boolean).join('\n'));
+          await tell([...M.spLocked(who, signed(last.local_delta_sat), signed(last.remote_delta_sat), plain(c.local_balance), plain(c.remote_balance), plain(c.capacity)), last.txid ? `Tx: ${last.txid}` : ''].filter(Boolean).join('\n'));
         } else {
           // The reason can come from the peer: cut, so a long one cannot break the message.
           const reason = String(last.reason || '').slice(0, 300);
