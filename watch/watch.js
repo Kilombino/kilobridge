@@ -176,7 +176,7 @@ function rest(p) {
     req.end();
   });
 }
-const PATHS = { 'bridge status': '/v2/bridge/status', 'bridge info': '/v2/bridge/info', listchannels: '/v1/channels' };
+const PATHS = { 'bridge status': '/v2/bridge/status', 'bridge info': '/v2/bridge/info', listchannels: '/v1/channels?peer_alias_lookup=true' };
 const lncli = (...a) => REST ? rest(PATHS[a.join(' ')]) : lncliExec(...a);
 
 async function tell(text) {
@@ -450,7 +450,10 @@ async function splices(st) {
   for (const c of channels) {
     const key = c.original_channel_point || c.channel_point;
     const k = st.splices[key] ||= {};
-    const who = (c.peer_alias || c.remote_pubkey.slice(0, 16)).slice(0, 40);
+    // The peer's name, then the start of its key; names that are only the key, or lnd's lookup error, are not names.
+    const alias = (c.peer_alias || '').trim();
+    const named = alias && !/^unable to lookup/.test(alias) && !c.remote_pubkey.startsWith(alias.toLowerCase());
+    const who = named ? `${alias.slice(0, 40)} (${c.remote_pubkey.slice(0, 16)})` : c.remote_pubkey.slice(0, 16);
     const p = c.pending_splice;
     if (p && p.state) {
       const id = p.txid || p.new_channel_point || p.state;
