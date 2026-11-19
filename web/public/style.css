@@ -92,3 +92,5 @@ footer a { color: inherit; }
 .mt { margin-top: 14px; }
 .stepT { font-weight: 700; margin: 0; }
 .copy.btn.wide { margin-top: 8px; min-height: 40px; padding: 8px 14px; }
+.api li code { display: inline; padding: 2px 6px; margin: 0; border-radius: 6px; }
+.api li { margin-bottom: 8px; }

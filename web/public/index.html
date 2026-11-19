@@ -101,6 +101,21 @@
     </ul>
     <a class="btn ghost wide" href="https://github.com/Kilombino/kilobridge#run-your-own-bridge" rel="noreferrer" data-t="ownBtn"></a>
   </section>
+
+  <section class="how own api">
+    <h2 data-t="apiTitle"></h2>
+    <p data-t="api1"></p>
+    <ul>
+      <li><code>GET /api/info</code> · <span data-t="apiInfo"></span></li>
+      <li><code>GET /api/pow</code> · <span data-t="apiPow"></span></li>
+      <li><code>POST /api/check</code> · <span data-t="apiCheck"></span></li>
+      <li><code>POST /api/quote</code> · <span data-t="apiQuote"></span></li>
+      <li><code>GET /api/swap/&lt;hash&gt;?t=&lt;token&gt;</code> · <span data-t="apiSwap"></span></li>
+    </ul>
+    <p data-t="apiCors"></p>
+    <p><span data-t="apiOnion"></span><br><code class="mono break">http://li7nwmrffmt6iut2ygolrs6mgrzwdxe26mtatzpgxvff3fri3rnq4iid.onion</code></p>
+    <p class="note" data-t="apiLimits"></p>
+  </section>
   </div>
 
   <div id="tabLsp" hidden>
@@ -159,7 +174,7 @@
 <canvas id="canvas" hidden></canvas>
 <script src="qrcode.js"></script>
 <script src="jsqr.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 <script src="lsp.js?v=3"></script>
 </body>
 </html>
