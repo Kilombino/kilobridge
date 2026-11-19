@@ -510,8 +510,18 @@ function headers(res) {
   return res.req.socket.localPort === PORT ? { ...HEADERS, 'strict-transport-security': HSTS } : HEADERS;
 }
 
+// The JSON API is public (no cookies, no credentials): any web app, e.g. a Nostr client, may call it.
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-headers': 'content-type',
+  'access-control-max-age': '86400',
+  'cross-origin-resource-policy': 'cross-origin',
+};
+
 function send(res, status, obj) {
-  res.writeHead(status, { ...headers(res), 'content-type': 'application/json', 'cache-control': 'no-store' });
+  const api = res.req.url.startsWith('/api/') ? CORS : {};
+  res.writeHead(status, { ...headers(res), ...api, 'content-type': 'application/json', 'cache-control': 'no-store' });
   res.end(JSON.stringify(obj));
 }
 
@@ -527,6 +537,10 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
   const u = new URL(req.url, 'http://x');
   const who = visitor(req);
   try {
+    if (req.method === 'OPTIONS' && u.pathname.startsWith('/api/')) {
+      res.writeHead(204, { ...headers(res), ...CORS });
+      return res.end();
+    }
     if (req.method === 'POST' && (u.pathname === '/api/check' || u.pathname === '/api/quote')) {
       if (!String(req.headers['content-type'] || '').startsWith('application/json')) return send(res, 415, { error: 'invalid_request' });
       const body = await readBody(req).catch(() => null);
