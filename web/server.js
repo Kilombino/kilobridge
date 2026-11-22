@@ -22,6 +22,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { decode } = require('./bolt11');
+const lnurl = require('./lnurl');
 
 const PORT = Number(process.env.PORT || 3250);         // Cloudflare's tunnel
 const TOR_PORT = Number(process.env.TOR_PORT || 3251); // the onion: headers are not trusted
@@ -430,6 +431,112 @@ async function apiSwap(hash, token, who) {
   }];
 }
 
+// --- Lightning addresses and LNURL-pay (optional) ---------------------------
+// With FETCHER_URL set (fetcher.js, the one process allowed out to the internet), the
+// destination can also be a Lightning address or an LNURL-pay of either chain. The first call
+// reads the payRequest and asks it for an invoice of its smallest amount, to learn which chain
+// it is on (option_blake2b, as for any invoice) and so the bridge's range for that direction;
+// the second asks for the chosen amount. Every invoice is checked here (amount exactly as
+// asked, description hash = hash of the metadata when present, a valid signature) and then
+// goes through /api/check and /api/quote like a pasted one. On-chain addresses are refused.
+
+const FETCHER_URL = (process.env.FETCHER_URL || '').replace(/\/+$/, '');
+const lnurlCache = new Map(); // url -> { p, dir, until }
+
+function fetchJson(target) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(FETCHER_URL + '/get');
+    const data = JSON.stringify({ url: target });
+    const r = http.request({
+      host: u.hostname, port: u.port, path: u.pathname, method: 'POST', timeout: 45_000,
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) },
+    }, (res) => {
+      let buf = '';
+      res.on('data', (c) => { buf += c; if (buf.length > 200_000) r.destroy(new Error('lnurl_unreadable')); });
+      res.on('end', () => {
+        let j;
+        try { j = JSON.parse(buf); } catch { return reject(new Error('lnurl_unreachable')); }
+        if (j.error) return reject(new Error(j.error === 'blocked' ? 'lnurl_blocked' : j.error === 'insecure' ? 'lnurl_insecure' : 'lnurl_unreachable'));
+        let body = null;
+        try { body = JSON.parse(j.body); } catch {}
+        // LNURL servers answer errors as {"status":"ERROR"} too, often with a 4xx status.
+        if (body && typeof body === 'object' && (j.status < 400 || body.status === 'ERROR')) return resolve(body);
+        reject(new Error(j.status === 404 ? 'lnurl_not_found' : 'lnurl_unreadable'));
+      });
+    });
+    r.on('timeout', () => r.destroy(new Error('lnurl_unreachable')));
+    r.on('error', (e) => reject(/^lnurl_/.test(e.message) ? e : new Error('lnurl_unreachable')));
+    r.end(data);
+  });
+}
+
+// The payRequest behind a destination and the direction its invoices take (cached 10 minutes).
+async function lnurlResolve(dest) {
+  const now = Date.now();
+  for (const [k, v] of lnurlCache) if (v.until < now) lnurlCache.delete(k);
+  const c = lnurlCache.get(dest.url);
+  if (c) return c;
+  const p = lnurl.payParams(await fetchJson(dest.url));
+  if (p.err) return p;
+  // An invoice of the smallest amount, only to see which chain it is on; it is never quoted.
+  const msat = Math.ceil(p.min / 1000) * 1000;
+  if (msat > p.max) return { err: 'lnurl_no_range' };
+  const pr = lnurl.checkPr(await fetchJson(lnurl.callbackUrl(p.callback, msat)), msat, p.metadata);
+  if (pr.err) return pr;
+  if (pr.inv.network !== 'bc') return { err: 'wrong_network' };
+  const dir = pr.inv.blake2b ? 'toBLAKE2b' : 'toSHA256';
+  if (dir === 'toBLAKE2b' && !SHA_NODE) return { err: 'no_direction' };
+  const r = { p, dir, until: now + 10 * 60_000 };
+  if (lnurlCache.size < 1000) lnurlCache.set(dest.url, r);
+  return r;
+}
+
+const lnurlErr = (e) => (/^lnurl_[a-z_]+$/.test(e.message || '') ? e.message : refusal(e));
+
+async function apiLnurl(body, who) {
+  if (!FETCHER_URL) return [404, { error: 'lnurl_off' }];
+  const dest = lnurl.parseDest(body.dest);
+  if (dest.err) return [400, { error: dest.err }];
+  const tor = who === 'tor';
+  const wantInvoice = body.amount_sat !== undefined;
+  if (!allow((wantInvoice ? 'lnurli:' : 'lnurlr:') + who, tor ? 60 : 20, 600_000) || !allow('lnurl:all', 300, 600_000)) {
+    return [429, { error: 'limit' }];
+  }
+  let r;
+  try { r = await lnurlResolve(dest); } catch (e) { return [400, { error: lnurlErr(e) }]; }
+  if (r.err) return [400, { error: r.err, ...(r.reason ? { reason: r.reason } : {}) }];
+  const { p, dir } = r;
+  const d = await info(dir);
+  if (!d.open) return [400, { error: d.refusal_code || 'unavailable', dir }];
+  // Whole sats, inside both the recipient's range and the bridge's for this direction.
+  const minSat = Math.ceil(Math.max(p.min, Number(d.min_msat)) / 1000);
+  const maxSat = Math.floor(Math.min(p.max, Number(d.max_msat)) / 1000);
+  const about = {
+    dir, kind: dest.kind, address: dest.address || '', domain: new URL(dest.url).hostname,
+    description: p.description, identifier: p.identifier, comment_allowed: p.commentAllowed,
+    min_sat: minSat, max_sat: maxSat,
+  };
+  if (minSat > maxSat) {
+    return [400, { error: 'lnurl_no_range', dir, lnurl_min_sat: Math.ceil(p.min / 1000), lnurl_max_sat: Math.floor(p.max / 1000),
+      bridge_min_sat: Math.ceil(Number(d.min_msat) / 1000), bridge_max_sat: Math.floor(Number(d.max_msat) / 1000) }];
+  }
+  if (!wantInvoice) return [200, about];
+
+  const sat = Number(body.amount_sat);
+  if (!Number.isSafeInteger(sat) || sat < minSat || sat > maxSat) return [400, { error: 'amount_range', ...about }];
+  const comment = typeof body.comment === 'string' ? lnurl.cleanReason(body.comment).slice(0, 2000) : '';
+  if (comment && comment.length > p.commentAllowed) return [400, { error: 'comment_too_long', comment_allowed: p.commentAllowed }];
+  let pr;
+  try { pr = lnurl.checkPr(await fetchJson(lnurl.callbackUrl(p.callback, sat * 1000, comment)), sat * 1000, p.metadata); } catch (e) {
+    return [400, { error: lnurlErr(e) }];
+  }
+  if (pr.err) return [400, { error: pr.err, ...(pr.reason ? { reason: pr.reason } : {}) }];
+  const ok = checkInvoice(pr.pr);
+  if (ok.err) return [400, { error: ok.err }];
+  if (ok.dir !== dir) { lnurlCache.delete(dest.url); return [400, { error: 'lnurl_bad_invoice' }]; }
+  return [200, { ...about, invoice: pr.pr, sat, hash: ok.inv.hash }];
+}
+
 // --- Inbound channels (optional) -------------------------------------------
 // When LSP_URL points at a kilo-lsp server (the operator's inbound channel service), the page
 // gets a second tab to buy a channel from the operator's node. This server only relays three
@@ -548,6 +655,13 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
       const [st, obj] = await (u.pathname === '/api/check' ? apiCheck(body, who) : apiQuote(body, who));
       return send(res, st, obj);
     }
+    if (req.method === 'POST' && u.pathname === '/api/lnurl') {
+      if (!String(req.headers['content-type'] || '').startsWith('application/json')) return send(res, 415, { error: 'invalid_request' });
+      const body = await readBody(req).catch(() => null);
+      if (!body || typeof body.dest !== 'string') return send(res, 400, { error: 'invalid_request' });
+      const [st, obj] = await apiLnurl(body, who);
+      return send(res, st, obj);
+    }
     if (req.method === 'GET' && u.pathname.startsWith('/api/swap/')) {
       const [st, obj] = await apiSwap(u.pathname.slice(10), u.searchParams.get('t'), who);
       return send(res, st, obj);
@@ -580,8 +694,8 @@ const server = http.createServer({ connectionsCheckingInterval: 2_000 }, async (
       } catch {}
       return send(res, 200, d ? {
         open: d.open && l.ok, rate: d.rate, spread: d.spread,
-        min_sat: Number(d.min_msat) / 1000, max_sat: Number(d.max_msat) / 1000, labels: LABELS, prices, dirs,
-      } : { open: false, labels: LABELS, prices, dirs });
+        min_sat: Number(d.min_msat) / 1000, max_sat: Number(d.max_msat) / 1000, labels: LABELS, prices, dirs, lnurl: !!FETCHER_URL,
+      } : { open: false, labels: LABELS, prices, dirs, lnurl: !!FETCHER_URL });
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method' });
     const name = u.pathname === '/' ? 'index.html' : u.pathname.slice(1);

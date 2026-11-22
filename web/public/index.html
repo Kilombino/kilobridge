@@ -7,7 +7,7 @@
 <meta name="description" content="Pay a Lightning invoice on another chain with your coins. Non-custodial: your payment is only collected once the invoice is paid.">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="favicon.png" type="image/png">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <main>
@@ -34,7 +34,7 @@
 
   <section id="step1" class="card">
     <label for="invoice" data-t="paste"></label>
-    <textarea id="invoice" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="lnbc…"></textarea>
+    <textarea id="invoice" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="lnbc… · name@domain · lnurl1…"></textarea>
     <div class="row">
       <button id="scanBtn" class="btn ghost"><svg class="icon-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span data-t="scan"></span></button>
       <button id="pasteBtn" class="btn ghost" data-t="pasteBtn"></button>
@@ -43,8 +43,29 @@
     <p id="err1" class="err" hidden></p>
   </section>
 
+  <section id="stepAmt" class="card" hidden>
+    <dl class="sum">
+      <dt data-t="toL"></dt><dd id="amtTo" class="break"></dd>
+      <dt data-t="dirL"></dt><dd id="amtDir"></dd>
+    </dl>
+    <p class="note" id="amtDesc"></p>
+    <label for="amount" id="amtLabel" class="mt"></label>
+    <input id="amount" class="field" inputmode="numeric" autocomplete="off" spellcheck="false">
+    <p class="note" id="amtRange"></p>
+    <div id="commentBox" hidden>
+      <label for="comment" data-t="commentL" class="mt"></label>
+      <input id="comment" class="field" autocomplete="off">
+    </div>
+    <div class="row">
+      <button id="amtBack" class="btn ghost" data-t="back"></button>
+      <button id="amtBtn" class="btn primary" data-t="amtNext"></button>
+    </div>
+    <p id="errAmt" class="err" hidden></p>
+  </section>
+
   <section id="step2" class="card" hidden>
     <dl class="sum">
+      <dt id="sumDestL" data-t="toL" hidden></dt><dd id="sumDest" class="break" hidden></dd>
       <dt data-t="dirL"></dt><dd id="sumDir"></dd>
       <dt data-t="youSend"></dt><dd id="sumSat"></dd>
       <dt data-t="youPay"></dt><dd id="sumPay" class="hi"></dd>
@@ -108,6 +129,7 @@
     <ul>
       <li><code>GET /api/info</code> · <span data-t="apiInfo"></span></li>
       <li><code>GET /api/pow</code> · <span data-t="apiPow"></span></li>
+      <li><code>POST /api/lnurl</code> · <span data-t="apiLnurl"></span></li>
       <li><code>POST /api/check</code> · <span data-t="apiCheck"></span></li>
       <li><code>POST /api/quote</code> · <span data-t="apiQuote"></span></li>
       <li><code>GET /api/swap/&lt;hash&gt;?t=&lt;token&gt;</code> · <span data-t="apiSwap"></span></li>
@@ -174,7 +196,7 @@
 <canvas id="canvas" hidden></canvas>
 <script src="qrcode.js"></script>
 <script src="jsqr.js"></script>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 <script src="lsp.js?v=3"></script>
 </body>
 </html>

@@ -95,10 +95,18 @@ sudo systemctl enable --now kilobridge-web
 
 Put `PORT` behind your tunnel or reverse proxy (it trusts `CF-Connecting-IP` there) and `TOR_PORT` behind an onion service (`HiddenServicePort 80 127.0.0.1:3251`; headers are not believed on that port). Without fresh limits from the watcher the page refuses to quote, so start the watcher first.
 
+Optional: paying Lightning addresses (`name@domain`) and LNURL-pay of either chain, not only invoices. The web itself never leaves localhost, so a second small service fetches the LNURL pages for it: `web/fetcher.js`, with no secrets, on `127.0.0.1:3252`. It only fetches https (an onion through Tor's SOCKS port, `TOR_SOCKS`, 127.0.0.1:9050 by default), refuses private, reserved and this machine's own addresses and connects to the address it checked, follows at most two redirects (each checked), and keeps answers to 64 KB and 10 s; its unit also denies private ranges in the kernel. Then set `FETCHER_URL=http://127.0.0.1:3252` for the web, which checks every invoice it gets back (exact amount, description hash = hash of the metadata when present, a valid signature) before it goes through the usual check and quote. On-chain addresses are refused.
+
+```sh
+sudo cp deploy/kilobridge-lnurl.service /etc/systemd/system/
+sudo systemctl enable --now kilobridge-lnurl
+# and FETCHER_URL=http://127.0.0.1:3252 in /etc/kilobridge/web.env, then restart kilobridge-web
+```
+
 ## Security notes
 
 - No custody: a hold invoice with the payer's payment hash; nothing is paid out that was not paid for.
-- The web holds one URI-scoped macaroon (three calls) and runs as a throwaway user that can only reach localhost.
+- The web holds one URI-scoped macaroon (three calls) and runs as a throwaway user that can only reach localhost. The optional LNURL fetcher is the only part that goes out to the internet, and it holds nothing.
 - The server keeps no accounts and logs no invoices. The bridge's journal does keep every quoted invoice, and a TLS proxy in front (Cloudflare) sees every request.
 - Strict CSP and no third-party scripts, as the server sends them; a proxy in front can replace those headers and add its own script (Cloudflare's managed headers and bot detection do), so check the live headers with `curl -I`. On the onion they reach the browser as sent.
 - Anyone with an invoice can follow the state of its swap; the preimage (proof of payment) goes only to whoever got the quote, with the token the quote returned.

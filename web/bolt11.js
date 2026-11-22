@@ -1,6 +1,6 @@
 // Just enough BOLT 11 to check an invoice before and after the bridge sees it:
-// amount, timestamp, expiry, payment hash, feature bits and who signed it (the
-// payee node, recovered from the signature, or the n field when present).
+// amount, timestamp, expiry, payment hash, description hash, feature bits and who signed it
+// (the payee node, recovered from the signature, or the n field when present).
 'use strict';
 
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
@@ -131,12 +131,13 @@ function decode(invoice) {
   const words = data.slice(0, -6 - 104); // drop the checksum and the signature
   let timestamp = 0;
   for (const w of words.slice(0, 7)) timestamp = timestamp * 32 + w;
-  let expiry = 3600, hash = null, features = [], minCltv = 18, nodeField = null;
+  let expiry = 3600, hash = null, features = [], minCltv = 18, nodeField = null, descriptionHash = null;
   for (let i = 7; i + 3 <= words.length;) {
     const tag = words[i], len = words[i + 1] * 32 + words[i + 2];
     const field = words.slice(i + 3, i + 3 + len);
     i += 3 + len;
     if (tag === 1 && len === 52) hash = toBytes(field).subarray(0, 32).toString('hex');
+    else if (tag === 23 && len === 52) descriptionHash = toBytes(field).subarray(0, 32).toString('hex');
     else if (tag === 19 && len === 53) nodeField = toBytes(field).subarray(0, 33).toString('hex');
     else if (tag === 6) expiry = field.reduce((a, w) => a * 32 + w, 0);
     else if (tag === 24) minCltv = field.reduce((a, w) => a * 32 + w, 0);
@@ -157,9 +158,9 @@ function decode(invoice) {
   const signer = recover(digest, sigBytes.subarray(0, 64), sigBytes[64]);
   const payee = signer && (!nodeField || nodeField === signer) ? signer : null;
   return {
-    network: m[1], msat, timestamp, expiry, expiresAt: timestamp + expiry, hash, features, minCltv, payee,
+    network: m[1], msat, timestamp, expiry, expiresAt: timestamp + expiry, hash, features, minCltv, payee, descriptionHash,
     blake2b: features.includes(512) || features.includes(513),
   };
 }
 
-module.exports = { decode };
+module.exports = { decode, bech32: { CHARSET, polymod, hrpExpand, toBytes } };

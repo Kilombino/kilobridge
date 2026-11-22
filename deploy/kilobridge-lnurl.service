@@ -1,0 +1,39 @@
+[Unit]
+Description=Kilobridge LNURL fetcher (Lightning addresses for the web; no secrets)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/node /opt/kilobridge/web/fetcher.js
+Environment=FETCHER_PORT=3252 TOR_SOCKS=127.0.0.1:9050
+Restart=always
+RestartSec=5
+
+# Its own throwaway user. It must reach the internet, but never private or link-local ranges
+# (localhost stays allowed for Tor's SOCKS port and for the web asking it; the code refuses
+# loopback as a destination).
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+IPAddressAllow=localhost
+IPAddressDeny=0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4 fc00::/7 fe80::/10 ff00::/8
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+LockPersonality=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+MemoryMax=128M
+ProtectProc=invisible
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

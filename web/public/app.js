@@ -3,7 +3,7 @@
   const T = {
     en: {
       lead: 'Pay a Lightning invoice of one chain with the other one\'s coins: a {CHAIN} invoice with {COIN}, or a {COIN} invoice with {SHACOIN}. Your payment is held and only collected once the invoice has been paid; otherwise it comes back to you by itself.',
-      paste: 'Lightning invoice to pay ({CHAIN} or {COIN}: it is detected)', pasteBtn: 'Paste', scan: 'Scan QR', check: 'Check price',
+      paste: 'Lightning invoice, Lightning address or LNURL to pay ({CHAIN} or {COIN}: it is detected)', pasteBtn: 'Paste', scan: 'Scan QR', check: 'Check price',
       dirL: 'Direction', dirSha: '{CHAIN} invoice → you pay with {COIN}', dirOwn: '{COIN} invoice → you pay with {SHACOIN}',
       youSend: 'Invoice to pay', youPay: 'You pay about', price: 'Price', fee: 'Fee',
       estimateNote: 'The final price is set when you press the button: you then have 1 minute to pay.',
@@ -18,7 +18,7 @@
       lostTitle: 'Needs a look', lostText: 'Something unusual happened. Contact {OP} with the payment hash.',
       again: 'Pay another invoice', newPrice: 'Get a new price',
       howTitle: 'How it works',
-      how1: 'Paste or scan the invoice you want paid, {CHAIN} or {COIN}, and check the price. The page tells which one it is.',
+      how1: 'Paste or scan the invoice you want paid, {CHAIN} or {COIN}, or a Lightning address (name@domain) or LNURL with the amount, and check the price. The page tells which chain it is.',
       how2: 'Get an invoice of the other chain with the same payment hash and pay it within 1 minute.',
       pricesNote: 'Market prices, without the bridge\'s fee. Updated every minute.',
       how3: 'The bridge pays your invoice and only then collects your payment. If it cannot, your payment comes back by itself.',
@@ -34,12 +34,15 @@
       api1: 'Everything this page does goes through a small public JSON API, with no account and no cookies. Your app, website or Nostr client can call it directly from the browser.',
       apiInfo: 'whether the bridge is open in each direction, price, spread, limits and market prices.',
       apiPow: 'a proof-of-work challenge. Find a nonce so that SHA-256 of "challenge:payment hash:nonce" starts with the requested zero bits (about a second in a browser).',
+      apiLnurl: 'body {"dest": "name@domain" or "lnurl1…"}: reads a Lightning address or LNURL-pay of either chain and returns its chain (dir), description and the amount range allowed (min_sat/max_sat, recipient and bridge); add "amount_sat" (and "comment" if comment_allowed) to get the invoice, already checked (exact amount, description hash), to use with /api/check and /api/quote. On-chain addresses are not accepted.',
       apiCheck: 'body {"invoice": "lnbc…"}: checks the invoice and returns the estimated price and fee, without committing to anything.',
       apiQuote: 'body {"invoice": "lnbc…", "pow": {"challenge": "…", "nonce": "…"}}: returns the hold invoice to pay and a token to follow the swap.',
       apiSwap: 'the swap status (hash = payment hash of the invoice being paid).',
       apiCors: 'Calls from other websites are allowed (Access-Control-Allow-Origin: *; the OPTIONS preflight answers 204 and accepts Content-Type).',
       apiOnion: 'The same API over Tor:',
       apiLimits: 'Rate limits per IP apply (over the onion, a shared Tor bucket) and quotes require the proof of work. Please do not hammer it.',
+      toL: 'Pay to', amtL: 'Amount in {INVUNIT}', amtNext: 'Continue', commentL: 'Comment for the recipient (optional)',
+      amtRange: (min, max) => `Between ${min} and ${max} {INVUNIT} (the recipient's limits and the bridge's).`,
       scanHint: 'Point the camera at the invoice QR.', close: 'Close',
       noCamera: 'This browser cannot use the camera here. Paste the invoice instead.',
       e: {
@@ -58,11 +61,25 @@
         wait: (d) => `Wait ${d.wait_s} s before asking for a new price for this invoice.`,
         no_direction: 'This bridge isn’t paying that kind of invoice right now.', bad_hold: 'The bridge gave an invoice that didn’t check out, so it isn’t shown. Try again.',
         unavailable: 'The bridge is not available right now. Try again later.', network: 'Can’t reach the server. Check your connection.',
+        onchain: 'On-chain addresses are not accepted, only Lightning: an invoice, a Lightning address (name@domain) or an LNURL.',
+        lnurl_bad: 'That is not an invoice, a Lightning address (name@domain) or an LNURL.',
+        lnurl_insecure: 'That LNURL does not use https, so it is not used.',
+        lnurl_blocked: 'That address points to a server that cannot be reached from here.',
+        lnurl_unreachable: 'Can’t reach the recipient’s server. Check the address or try later.',
+        lnurl_not_found: 'The recipient’s server does not know that address.',
+        lnurl_unreadable: 'The recipient’s server gave an answer that can’t be read.',
+        lnurl_not_pay: 'That LNURL is not for payments.',
+        lnurl_error: (d) => d.reason ? `The recipient’s server said: “${d.reason}”` : 'The recipient’s server refused the request.',
+        lnurl_bad_invoice: 'The recipient’s server returned an invoice that does not match (amount or description), so it is not used.',
+        lnurl_no_range: (d) => d.lnurl_min_sat ? `This recipient accepts ${fmt(d.lnurl_min_sat)}–${fmt(d.lnurl_max_sat)} {INVUNIT} and the bridge ${fmt(d.bridge_min_sat)}–${fmt(d.bridge_max_sat)}: no amount fits both.` : 'No amount fits both the recipient’s limits and the bridge’s.',
+        amount_range: (d) => `The amount must be between ${fmt(d.min_sat)} and ${fmt(d.max_sat)} {INVUNIT}.`,
+        comment_too_long: (d) => `The comment is too long (at most ${d.comment_allowed} characters).`,
+        lnurl_off: 'This bridge only accepts invoices.',
       },
     },
     es: {
       lead: 'Paga una factura Lightning de una cadena con monedas de la otra: una factura {CHAIN} con {COIN}, o una factura {COIN} con {SHACOIN}. Tu pago queda retenido y solo se cobra cuando la factura se ha pagado; si no, vuelve a ti solo.',
-      paste: 'Factura Lightning a pagar ({CHAIN} o {COIN}: se detecta sola)', pasteBtn: 'Pegar', scan: 'Escanear QR', check: 'Ver precio',
+      paste: 'Factura Lightning, dirección Lightning o LNURL a pagar ({CHAIN} o {COIN}: se detecta sola)', pasteBtn: 'Pegar', scan: 'Escanear QR', check: 'Ver precio',
       dirL: 'Sentido', dirSha: 'Factura {CHAIN} → pagas con {COIN}', dirOwn: 'Factura {COIN} → pagas con {SHACOIN}',
       youSend: 'Factura a pagar', youPay: 'Pagas unos', price: 'Precio', fee: 'Comisión',
       estimateNote: 'El precio final se fija al pulsar el botón: desde ese momento tienes 1 minuto para pagar.',
@@ -77,7 +94,7 @@
       lostTitle: 'Hay que revisarlo', lostText: 'Ha pasado algo raro. Escribe a {OP} con el hash del pago.',
       again: 'Pagar otra factura', newPrice: 'Pedir precio nuevo',
       howTitle: 'Cómo funciona',
-      how1: 'Pega o escanea la factura que quieres pagar, {CHAIN} o {COIN}, y mira el precio. La página detecta cuál es.',
+      how1: 'Pega o escanea la factura que quieres pagar, {CHAIN} o {COIN}, o una dirección Lightning (nombre@dominio) o LNURL con el importe, y mira el precio. La página detecta de qué cadena es.',
       how2: 'Obtén una factura de la otra cadena con el mismo hash de pago y págala en menos de 1 minuto.',
       pricesNote: 'Precios de mercado, sin la comisión del puente. Se actualizan cada minuto.',
       how3: 'El bridge paga tu factura y solo entonces cobra tu pago. Si no puede, tu pago vuelve solo.',
@@ -93,12 +110,15 @@
       api1: 'Todo lo que hace esta página pasa por una pequeña API JSON pública, sin cuenta ni cookies. Tu app, tu web o tu cliente Nostr pueden llamarla directamente desde el navegador.',
       apiInfo: 'si el bridge está abierto en cada sentido, precio, margen, límites y precios de mercado.',
       apiPow: 'un reto de prueba de trabajo. Busca un nonce para que el SHA-256 de "reto:hash del pago:nonce" empiece por los bits a cero pedidos (alrededor de un segundo en el navegador).',
+      apiLnurl: 'cuerpo {"dest": "nombre@dominio" o "lnurl1…"}: lee una dirección Lightning o un LNURL-pay de cualquiera de las dos cadenas y devuelve su cadena (dir), su descripción y el rango de importes permitido (min_sat/max_sat, del destinatario y del bridge); añade "amount_sat" (y "comment" si comment_allowed) para obtener la factura, ya comprobada (importe exacto, description hash), y úsala con /api/check y /api/quote. No se aceptan direcciones on-chain.',
       apiCheck: 'cuerpo {"invoice": "lnbc…"}: comprueba la factura y devuelve el precio y la comisión estimados, sin comprometer nada.',
       apiQuote: 'cuerpo {"invoice": "lnbc…", "pow": {"challenge": "…", "nonce": "…"}}: devuelve la hold invoice que hay que pagar y un token para seguir el swap.',
       apiSwap: 'el estado del swap (hash = payment hash de la factura que se paga).',
       apiCors: 'Se permiten llamadas desde otras webs (Access-Control-Allow-Origin: *; el preflight OPTIONS responde 204 y acepta Content-Type).',
       apiOnion: 'La misma API por Tor:',
       apiLimits: 'Hay límites de uso por IP (por la onion, un cupo compartido de Tor) y los presupuestos exigen la prueba de trabajo. No la machaques, por favor.',
+      toL: 'Pagar a', amtL: 'Importe en {INVUNIT}', amtNext: 'Continuar', commentL: 'Comentario para el destinatario (opcional)',
+      amtRange: (min, max) => `Entre ${min} y ${max} {INVUNIT} (límites del destinatario y del bridge).`,
       scanHint: 'Apunta la cámara al QR de la factura.', close: 'Cerrar',
       noCamera: 'Este navegador no puede usar la cámara aquí. Pega la factura.',
       e: {
@@ -117,6 +137,20 @@
         wait: (d) => `Espera ${d.wait_s} s antes de pedir otro precio para esta factura.`,
         no_direction: 'Este bridge ahora no está pagando ese tipo de factura.', bad_hold: 'El bridge dio una factura que no cuadraba y no se muestra. Prueba otra vez.',
         unavailable: 'El bridge no está disponible ahora. Prueba más tarde.', network: 'No se puede contactar con el servidor. Revisa tu conexión.',
+        onchain: 'No se aceptan direcciones on-chain, solo Lightning: una factura, una dirección Lightning (nombre@dominio) o un LNURL.',
+        lnurl_bad: 'Eso no es una factura, una dirección Lightning (nombre@dominio) ni un LNURL.',
+        lnurl_insecure: 'Ese LNURL no usa https, así que no se usa.',
+        lnurl_blocked: 'Esa dirección apunta a un servidor al que no se puede llegar desde aquí.',
+        lnurl_unreachable: 'No se puede contactar con el servidor del destinatario. Revisa la dirección o prueba más tarde.',
+        lnurl_not_found: 'El servidor del destinatario no conoce esa dirección.',
+        lnurl_unreadable: 'El servidor del destinatario dio una respuesta que no se puede leer.',
+        lnurl_not_pay: 'Ese LNURL no es para pagos.',
+        lnurl_error: (d) => d.reason ? `El servidor del destinatario dice: «${d.reason}»` : 'El servidor del destinatario rechazó la petición.',
+        lnurl_bad_invoice: 'El servidor del destinatario devolvió una factura que no cuadra (importe o descripción), así que no se usa.',
+        lnurl_no_range: (d) => d.lnurl_min_sat ? `Este destinatario acepta de ${fmt(d.lnurl_min_sat)} a ${fmt(d.lnurl_max_sat)} {INVUNIT} y el bridge de ${fmt(d.bridge_min_sat)} a ${fmt(d.bridge_max_sat)}: no hay importe que valga para los dos.` : 'No hay importe que valga a la vez para el destinatario y para el bridge.',
+        amount_range: (d) => `El importe tiene que estar entre ${fmt(d.min_sat)} y ${fmt(d.max_sat)} {INVUNIT}.`,
+        comment_too_long: (d) => `El comentario es demasiado largo (máximo ${d.comment_allowed} caracteres).`,
+        lnurl_off: 'Este bridge solo acepta facturas.',
       },
     },
   };
@@ -138,6 +172,7 @@
   const t = () => new Proxy(T[lang], { get: (o, k) => k === 'e' ? new Proxy(o.e, { get: (e, c) => fill(e[c]) }) : fill(o[k]) });
   let rev = false; // the invoice in hand is a {COIN} one, paid with {SHACOIN} (toBLAKE2b)
   let meta = null, quote = null, timer = null, poll = null, sat = 0, payHash = '';
+  let curInvoice = '', dest = null; // the invoice being paid; the Lightning address or LNURL it came from
 
   const nf = () => new Intl.NumberFormat(lang === 'es' ? 'es-ES' : 'en-US', { useGrouping: 'always' });
   const fmt = (n) => nf().format(n);
@@ -181,10 +216,10 @@
     applyLang();
   }));
 
-  function show(step) { ['step1', 'step2', 'step3', 'step4'].forEach((s) => { $(s).hidden = s !== step; }); }
+  function show(step) { ['step1', 'stepAmt', 'step2', 'step3', 'step4'].forEach((s) => { $(s).hidden = s !== step; }); }
   function errText(d) { const v = t().e[d.error] || t().e.unavailable; return typeof v === 'function' ? v(d) : v; }
   function showErr(id, d) { const el = $(id); el.textContent = errText(d); el.hidden = false; }
-  function clearErr() { $('err1').hidden = true; $('err2').hidden = true; }
+  function clearErr() { $('err1').hidden = true; $('err2').hidden = true; $('errAmt').hidden = true; }
 
   async function api(path, body) {
     let r;
@@ -195,6 +230,15 @@
   }
 
   const invoice = () => $('invoice').value.trim().replace(/^lightning:/i, '').replace(/\s+/g, '');
+  // An invoice goes straight to the price; anything else (a Lightning address, an LNURL, a
+  // bitcoin: URI) is read by the server, which also refuses on-chain addresses. A bitcoin: URI
+  // carrying an invoice in lightning= is that invoice.
+  const isInvoice = (s) => /^ln(bc|tb|bcrt|tbs)[0-9]*[munp]?1[02-9ac-hj-np-z]+$/i.test(s) && !/^lnurl/i.test(s);
+  function bip21Invoice(s) {
+    const m = /^bitcoin:[^?]*\?(?:.*&)?lightning=([^&]+)/i.exec(s);
+    if (!m) return '';
+    try { const v = decodeURIComponent(m[1]); return isInvoice(v) ? v : ''; } catch { return ''; }
+  }
 
   $('pasteBtn').addEventListener('click', async () => {
     try { $('invoice').value = await navigator.clipboard.readText(); } catch { $('invoice').focus(); }
@@ -202,13 +246,58 @@
 
   $('checkBtn').addEventListener('click', async () => {
     clearErr();
-    if (!invoice()) return;
+    const text = invoice();
+    if (!text) return;
+    const inv = isInvoice(text) ? text : bip21Invoice(text);
+    if (inv) { dest = null; return priceOf(inv, 'err1'); }
+    // A Lightning address or an LNURL: its chain and allowed range first, then the amount.
     $('checkBtn').disabled = true;
-    const d = await api('/api/check', { invoice: invoice() });
+    const d = await api('/api/lnurl', { dest: text });
     $('checkBtn').disabled = false;
-    rev = d.dir === 'toBLAKE2b';
-    applyLang();
+    if (d.dir) { rev = d.dir === 'toBLAKE2b'; applyLang(); }
     if (d.error) return showErr('err1', d);
+    dest = { text, ...d };
+    $('amtTo').textContent = d.address || d.identifier || d.domain;
+    $('amtDir').textContent = rev ? t().dirOwn : t().dirSha;
+    $('amtDesc').textContent = d.description || '';
+    $('amtDesc').hidden = !d.description;
+    $('amtLabel').textContent = t().amtL;
+    $('amtRange').textContent = t().amtRange(fmt(d.min_sat), fmt(d.max_sat));
+    $('amount').value = '';
+    $('amount').placeholder = `${fmt(d.min_sat)} – ${fmt(d.max_sat)}`;
+    $('commentBox').hidden = !d.comment_allowed;
+    $('comment').value = '';
+    $('comment').maxLength = d.comment_allowed || 0;
+    show('stepAmt');
+    $('amount').focus();
+  });
+
+  $('amtBack').addEventListener('click', () => { clearErr(); show('step1'); });
+  $('amtBtn').addEventListener('click', async () => {
+    clearErr();
+    const n = Number($('amount').value.replace(/[\s.,_'’]/g, ''));
+    if (!Number.isSafeInteger(n) || n < dest.min_sat || n > dest.max_sat) return showErr('errAmt', { error: 'amount_range', ...dest });
+    $('amtBtn').disabled = true;
+    const body = { dest: dest.text, amount_sat: n };
+    if (dest.comment_allowed && $('comment').value.trim()) body.comment = $('comment').value.trim();
+    const d = await api('/api/lnurl', body);
+    $('amtBtn').disabled = false;
+    if (d.error) return showErr('errAmt', { ...dest, ...d });
+    priceOf(d.invoice, 'errAmt');
+  });
+
+  // The price of paying an invoice, pasted or from a Lightning address: the summary with the
+  // fee, before anything is committed.
+  async function priceOf(inv, errId) {
+    $('checkBtn').disabled = $('amtBtn').disabled = true;
+    const d = await api('/api/check', { invoice: inv });
+    $('checkBtn').disabled = $('amtBtn').disabled = false;
+    if (d.dir) rev = d.dir === 'toBLAKE2b';
+    applyLang();
+    if (d.error) return showErr(errId, d);
+    curInvoice = inv;
+    $('sumDestL').hidden = $('sumDest').hidden = !dest;
+    $('sumDest').textContent = dest ? (dest.address || dest.identifier || dest.domain) : '';
     sat = d.sat;
     payHash = d.hash || '';
     $('sumDir').textContent = rev ? t().dirOwn : t().dirSha;
@@ -219,14 +308,16 @@
     $('sumFee').textContent = `${(d.spread * 100).toFixed(2)} %`;
     show('step2');
     if (d.wait_s) showErr('err2', { error: 'wait', wait_s: d.wait_s });
-  });
+  }
 
-  $('backBtn').addEventListener('click', () => { clearErr(); show('step1'); });
+  $('backBtn').addEventListener('click', () => { clearErr(); show(dest ? 'stepAmt' : 'step1'); });
   let retryMode = false;
   $('againBtn').addEventListener('click', () => {
     reset();
-    if (retryMode) return $('checkBtn').click(); // same invoice, fresh price
+    // Same invoice, fresh price; from a Lightning address, ask it for a new invoice.
+    if (retryMode) { if (dest) { show('stepAmt'); return; } show('step1'); return priceOf(curInvoice, 'err1'); }
     $('invoice').value = '';
+    dest = null;
     show('step1');
   });
 
@@ -288,7 +379,7 @@
     clearErr();
     $('quoteBtn').disabled = true;
     const pow = await work(payHash);
-    const d = pow.error ? pow : await api('/api/quote', { invoice: invoice(), pow });
+    const d = pow.error ? pow : await api('/api/quote', { invoice: curInvoice, pow });
     $('quoteBtn').disabled = false;
     if (d.error) { show('step2'); return showErr('err2', d); }
     quote = d;
@@ -371,7 +462,7 @@
   }
   function found(text) {
     const inv = String(text).trim().replace(/^lightning:/i, '');
-    if (!/^ln[a-z0-9]+$/i.test(inv)) return false;
+    if (!/^ln[a-z0-9]+$/i.test(inv) && !/^[a-z0-9\-_.+]+@[a-z0-9.-]+$/i.test(inv) && !/^(bitcoin:.*lightning=|lnurlp:\/\/)/i.test(inv)) return false;
     stopScan();
     $('invoice').value = inv;
     $('checkBtn').click();
