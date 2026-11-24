@@ -21,6 +21,7 @@
   <nav id="tabs" class="tabs" hidden>
     <a href="#" id="tabBridgeBtn" class="tab on">Kilobridge</a>
     <a href="#lsp" id="tabLspBtn" class="tab"></a>
+    <a href="#kiloswap" id="tabSwapBtn" class="tab">Kiloswap</a>
   </nav>
   <div id="tabBridge">
   <p class="lead" data-t="lead"></p>
@@ -140,6 +141,19 @@
   </section>
   </div>
 
+  <div id="tabSwap" hidden>
+    <p class="lead" id="swapLead"></p>
+    <section class="prices lspfacts">
+      <div class="pcard"><span class="plabel" id="swapInL"></span><strong id="swapIn"></strong></div>
+      <div class="pcard"><span class="plabel" id="swapOutL"></span><strong id="swapOut"></strong></div>
+      <div class="pcard"><span class="plabel" id="swapLimL"></span><strong id="swapLim"></strong></div>
+    </section>
+    <section class="card">
+      <a id="swapOpen" class="btn primary wide" href="https://swap.kilombino.com" target="_blank" rel="noopener"></a>
+      <p class="note mt" id="swapNote"></p>
+    </section>
+  </div>
+
   <div id="tabLsp" hidden>
     <p class="lead" id="lspLead"></p>
     <section class="prices lspfacts">
@@ -197,6 +211,7 @@
 <script src="qrcode.js"></script>
 <script src="jsqr.js"></script>
 <script src="app.js?v=5"></script>
-<script src="lsp.js?v=3"></script>
+<script src="lsp.js?v=4"></script>
+<script src="kiloswap.js?v=1"></script>
 </body>
 </html>

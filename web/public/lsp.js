@@ -142,11 +142,13 @@
   }
   $('lspSize').addEventListener('change', updatePay);
 
-  // Tabs, by the address: #lsp opens this one.
+  // Tabs, by the address: #lsp opens this one, #kiloswap the swap's.
   function route() {
     const lsp = location.hash === '#lsp' && !!info;
-    $('tabBridge').hidden = lsp; $('tabLsp').hidden = !lsp;
-    $('tabBridgeBtn').classList.toggle('on', !lsp); $('tabLspBtn').classList.toggle('on', lsp);
+    const swap = location.hash === '#kiloswap';
+    $('tabBridge').hidden = lsp || swap; $('tabLsp').hidden = !lsp; $('tabSwap').hidden = !swap;
+    $('tabBridgeBtn').classList.toggle('on', !lsp && !swap); $('tabLspBtn').classList.toggle('on', lsp);
+    $('tabSwapBtn').classList.toggle('on', swap);
   }
   window.addEventListener('hashchange', route);
   $('tabBridgeBtn').addEventListener('click', (ev) => { ev.preventDefault(); history.pushState(null, '', location.pathname); route(); });
