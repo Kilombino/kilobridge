@@ -5,7 +5,7 @@
 // opens it (over Tor, its onion when this page is on Tor).
 (() => {
   const SITE = 'https://swap.kilombino.com';
-  const ONION = ''; // the swap's onion, once it has one
+  const ONION = 'swapkqsnxocu2rnmwtaswpvchgl3teooeqgx43ookk5qqhzyx4rzqhid.onion';
   const T = {
     en: {
       lead: 'Swap between on-chain BTC and Lightning, without custody: your keys stay in your browser and a rescue key gets your coins back even if the service were gone.',
